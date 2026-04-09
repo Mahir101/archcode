@@ -220,7 +220,8 @@ fn parse_python(src: &str) -> ParsedSymbols {
         let name = cap[3].to_string();
         let sig = cap[0].trim().to_string();
         let line = line_of(src, cap.get(0).unwrap().start());
-        let is_pub = !name.starts_with('_');
+        // Use indent: indented defs are methods (not public at module level)
+        let is_pub = indent == 0 && !name.starts_with('_');
         let complexity = cyclomatic(&src[cap.get(0).unwrap().end()..]);
         out.functions.push(FunctionDef {
             name,

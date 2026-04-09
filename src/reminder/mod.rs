@@ -103,7 +103,7 @@ impl ReminderManager {
 
         let mut out = vec![];
         for r in eligible {
-            out.push(r.content.clone());
+            out.push(format!("[{}] {}", r.id, r.content));
             r.mark_fired(state.turn);
         }
         out

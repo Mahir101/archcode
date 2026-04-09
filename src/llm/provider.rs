@@ -34,6 +34,7 @@ pub enum Role {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub enum ContentType {
     Text,
     ToolCall,

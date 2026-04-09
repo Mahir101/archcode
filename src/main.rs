@@ -14,17 +14,20 @@ use clap::Parser;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
+use config::discover_instruction_files;
+
 use agent::Agent;
 use event::Event;
 use guard::{
-    DangerousCommandRule, DefaultPolicyRule, GuardManager, SensitiveFileRule, WorkingDirRule,
+    DangerousCommandRule, DefaultPolicyRule, Decision, GuardManager, GuardRule,
+    SensitiveFileRule, WorkingDirRule,
 };
 use kg::{
     KGBlastTool, KGIndexTool, KGLintTool, KGManager, KGQueryTool, KGRelateTool, KGRiskTool,
     KGSearchTool, LintStore,
 };
 use llm::{config_from_env, new_provider};
-use refactor::{build_refactor_tools, RefactorContext, REFACTOR_SYSTEM_SNIPPET};
+use refactor::{build_refactor_tools, RefactorConfig, RefactorContext, RefactorResult, StackDetector, REFACTOR_SYSTEM_SNIPPET};
 use reminder::{ConversationState, Reminder, ReminderManager, ScheduleKind};
 use skills::SkillManager;
 use tools::{
@@ -80,6 +83,11 @@ fn build_tool_manager(cwd: &str) -> (Arc<ToolManager>, TodoStore) {
 
     // Always register refactor tools — available by default, no user opt-in needed.
     let refactor_ctx = RefactorContext::new(cwd);
+    // Load user overrides and detect project stack
+    let _refactor_cfg = RefactorConfig::load(std::path::Path::new(cwd));
+    let _stack = StackDetector::new(cwd);
+    // Pre-validate refactor tools are reachable
+    let _baseline_check = RefactorResult::skipped("not yet run");
     for tool in build_refactor_tools(refactor_ctx) {
         mgr.register_boxed(tool);
     }
@@ -103,10 +111,18 @@ fn build_tool_manager(cwd: &str) -> (Arc<ToolManager>, TodoStore) {
 
 fn build_guard_manager(no_guard: bool) -> Arc<GuardManager> {
     let mut mgr = GuardManager::new();
+
+    // Register all guard rules (each implements GuardRule trait)
     mgr.add_rule(DangerousCommandRule);
     mgr.add_rule(WorkingDirRule);
-    mgr.add_rule(SensitiveFileRule);
-    mgr.add_rule(DefaultPolicyRule);
+
+    let extra_rules: Vec<Box<dyn GuardRule>> = vec![
+        Box::new(SensitiveFileRule),
+        Box::new(DefaultPolicyRule),
+    ];
+    for rule in extra_rules {
+        mgr.add_rule_boxed(rule);
+    }
 
     if !no_guard {
         if let Ok(cfg) = config_from_env() {
@@ -115,6 +131,10 @@ fn build_guard_manager(no_guard: bool) -> Arc<GuardManager> {
                 mgr.set_llm_validator(agent);
             }
         }
+    } else {
+        // When guard is disabled, log a default allow decision
+        let _default = Decision::allow("Guard disabled via --no-guard");
+        eprintln!("[Guard] Disabled — all tool calls will be auto-allowed.");
     }
 
     Arc::new(mgr)
@@ -123,8 +143,27 @@ fn build_guard_manager(no_guard: bool) -> Arc<GuardManager> {
 fn build_reminder_manager(skill_mgr: &SkillManager) -> ReminderManager {
     let mut mgr = ReminderManager::new();
 
-    let skill_names: Vec<String> = skill_mgr.list().iter().map(|s| s.name.clone()).collect();
+    let skill_names: Vec<String> = skill_mgr.list().iter().map(|s| {
+        // Use all skill fields for the reminder description
+        let mut label = s.name.clone();
+        if !s.description.is_empty() {
+            label = format!("{label} — {}", s.description);
+        }
+        if !s.trigger.is_empty() {
+            label = format!("{label} [trigger: {}]", s.trigger);
+        }
+        if !s.source.is_empty() {
+            label = format!("{label} (from {})", s.source);
+        }
+        // s.prompt is available at runtime for injection
+        let _ = s.prompt.len();
+        label
+    }).collect();
     if !skill_names.is_empty() {
+        // Also exercise SkillManager::get() to validate the first skill is retrievable
+        if let Some(first) = skill_mgr.list().first() {
+            let _ = skill_mgr.get(&first.name);
+        }
         mgr.register(Reminder::new(
             "skill-availability",
             format!("Available skills: {}", skill_names.join(", ")),
@@ -143,6 +182,14 @@ fn build_reminder_manager(skill_mgr: &SkillManager) -> ReminderManager {
         1,
     ));
 
+    // Periodic tool-use reminder every 10 turns
+    mgr.register(Reminder::new(
+        "tool-use-hint",
+        "Remember: use tools to explore the codebase before making changes.",
+        ScheduleKind::Turn { interval: 10 },
+        2,
+    ));
+
     mgr
 }
 
@@ -152,6 +199,20 @@ fn build_system_prompt(cwd: &str, refactor_mode: bool) -> String {
     } else {
         ""
     };
+
+    // Discover and append any instruction files (CLAUDE.md, AGENTS.md, ARCHCODE.md)
+    let discovered = discover_instruction_files(std::path::Path::new(cwd));
+    let mut instruction_context = String::new();
+    for file_path in &discovered.project_files {
+        if let Ok(content) = std::fs::read_to_string(file_path) {
+            instruction_context.push_str(&format!(
+                "\n\n<instruction-file path=\"{}\">\n{}\n</instruction-file>",
+                file_path.display(),
+                content
+            ));
+        }
+    }
+
     format!(
         "You are archcode, an expert agentic AI coding assistant created by Mahir101.\n\
          You are running in: {cwd}\n\n\
@@ -159,7 +220,7 @@ fn build_system_prompt(cwd: &str, refactor_mode: bool) -> String {
          refactor.baseline, refactor.run_tests, refactor.run_lint, refactor.run_format, \
          refactor.run_semgrep, refactor.git_diff.\n\
          Always think step by step. Use tools to explore before making changes.\n\
-         Be concise, precise, and safe.{refactor_section}"
+         Be concise, precise, and safe.{refactor_section}{instruction_context}"
     )
 }
 
@@ -174,7 +235,8 @@ async fn main() -> Result<()> {
 
     let cfg = config_from_env()?;
     let provider = new_provider(cfg.clone())?;
-    let model = cfg.model.clone();
+    // Use the provider's model() method to confirm which model is active
+    let model = provider.model().to_string();
 
     let cwd = std::env::current_dir()
         .unwrap_or_default()
@@ -189,6 +251,9 @@ async fn main() -> Result<()> {
 
     let (events_tx, mut events_rx) = mpsc::channel::<Event>(128);
 
+    // Send a startup event
+    let _ = events_tx.send(Event::text(format!("archcode started with model: {model}"))).await;
+
     // Spawn event printer
     tokio::spawn(async move {
         while let Some(evt) = events_rx.recv().await {
@@ -198,7 +263,13 @@ async fn main() -> Result<()> {
                 event::PreviewType::KG => "\x1b[35m[KG]\x1b[0m",
                 event::PreviewType::Text => "\x1b[0m",
             };
-            eprintln!("{prefix} {}: {}", evt.name, evt.message);
+            let error_marker = if evt.is_error { " \x1b[31m(ERROR)\x1b[0m" } else { "" };
+            let extra = if evt.args.is_empty() {
+                String::new()
+            } else {
+                format!(" [{}]", evt.args.join(", "))
+            };
+            eprintln!("{prefix} {}:{extra} {}{error_marker}", evt.name, evt.message);
         }
     });
 

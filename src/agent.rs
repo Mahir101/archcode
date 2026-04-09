@@ -5,7 +5,8 @@ use tokio::sync::mpsc;
 use crate::event::Event;
 use crate::guard::{EvalContext, GuardManager, Verdict};
 use crate::llm::{
-    CompletionParams, CompletionResponse, FinishReason, LlmProvider, Message, ToolDef,
+    CompletionParams, CompletionResponse, ContentBlock, FinishReason, LlmProvider, Message,
+    ToolCall, ToolCallResult, ToolDef,
 };
 use crate::reminder::{ConversationState, ReminderManager};
 use crate::tools::ToolManager;
@@ -79,7 +80,7 @@ impl Agent {
             .collect();
 
         for _turn in 0..MAX_TURNS {
-            let resp = self
+            let resp: CompletionResponse = self
                 .provider
                 .complete(CompletionParams {
                     model: self.model.clone(),
@@ -98,7 +99,7 @@ impl Agent {
                 }
                 FinishReason::ToolCalls => {
                     for tc in resp.message.tool_calls() {
-                        let tc = tc.clone();
+                        let tc: ToolCall = tc.clone();
                         let args: serde_json::Value =
                             serde_json::from_str(&tc.arguments).unwrap_or(serde_json::json!({}));
 
@@ -157,9 +158,20 @@ impl Agent {
                             .execute(&tc.name, args, Some(self.events_tx.clone()))
                             .await;
 
+                        // Use is_error to signal tool failure in the event
+                        if result.is_error {
+                            let _ = self
+                                .events_tx
+                                .send(Event::tool(&tc.name, format!("Tool error: {}", result.content)))
+                                .await;
+                        }
+
                         self.messages.push(Message {
                             role: crate::llm::Role::Tool,
-                            content: vec![crate::llm::ContentBlock::text(&result.content)],
+                            content: vec![ContentBlock::tool_result(ToolCallResult {
+                                tool_call_id: tc.id.clone(),
+                                content: result.content.clone(),
+                            })],
                             tool_call_id: Some(tc.id.clone()),
                         });
                     }
@@ -168,6 +180,9 @@ impl Agent {
             }
         }
 
+        // If we exhausted the turn budget, push a final assistant message
+        let fallback = "Reached maximum turns without a final response.".to_string();
+        self.messages.push(Message::assistant(&fallback));
         Ok(self.messages.last().map(|m| m.text()).unwrap_or_default())
     }
 }

@@ -90,7 +90,7 @@ impl KGManager {
         let mtime = std::fs::metadata(path)
             .ok()
             .and_then(|m| m.modified().ok())
-            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .and_then(|t: SystemTime| t.duration_since(UNIX_EPOCH).ok())
             .map(|d| d.as_secs())
             .unwrap_or(0);
 
@@ -169,6 +169,13 @@ impl KGManager {
             }
         }
 
+        // Type nodes: File --[contains]--> Type
+        for typedef in &symbols.types {
+            let key = format!("{path}::{}", typedef.name);
+            let type_ni = self.update_node(&key, KGNode::Type(typedef.clone()));
+            self.add_edge_once(file_ni, type_ni, KGEdge::new(EdgeKind::Contains));
+        }
+
         // FFI edge detection
         for (from_key, to_key, ffi_kind) in detect_ffi(path, &content) {
             let from_ni = self.get_or_create(
@@ -219,6 +226,10 @@ impl KGManager {
         }
         // After indexing all files, compute fan-in scores
         self.compute_fan_in();
+        // Layer 3: add git co-change coupling edges if this is a git repo
+        if std::path::Path::new(dir).join(".git").exists() {
+            self.add_git_cochange_edges(dir);
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -486,8 +497,21 @@ impl KGManager {
 
     pub fn stats(&self) -> String {
         let graph = self.graph.lock().unwrap();
+        // Count languages using Language::name()
+        let mut lang_counts: HashMap<String, usize> = HashMap::new();
+        for ni in graph.node_indices() {
+            if let KGNode::File(ref f) = graph[ni] {
+                *lang_counts.entry(f.language.name().to_string()).or_default() += 1;
+            }
+        }
+        let lang_info = if lang_counts.is_empty() {
+            String::new()
+        } else {
+            let parts: Vec<String> = lang_counts.iter().map(|(k, v)| format!("{k}:{v}")).collect();
+            format!(", langs: {}", parts.join(", "))
+        };
         format!(
-            "KG: {} nodes, {} edges",
+            "KG: {} nodes, {} edges{lang_info}",
             graph.node_count(),
             graph.edge_count()
         )

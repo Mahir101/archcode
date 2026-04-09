@@ -75,6 +75,10 @@ impl GuardManager {
         self.rules.push(Arc::new(rule));
     }
 
+    pub fn add_rule_boxed(&mut self, rule: Box<dyn GuardRule>) {
+        self.rules.push(Arc::from(rule));
+    }
+
     pub fn set_llm_validator(&mut self, v: impl LlmValidator + 'static) {
         self.llm_validator = Some(Arc::new(v));
     }
@@ -83,6 +87,14 @@ impl GuardManager {
     pub async fn evaluate(&self, ctx: &EvalContext) -> Decision {
         for rule in &self.rules {
             if let Some(d) = rule.evaluate(ctx).await {
+                // Send event via events_ch if available
+                if let Some(ch) = &ctx.events_ch {
+                    let _ = ch.send(Event::guard(
+                        &ctx.tool_name,
+                        format!("Rule decision: {}", d.reason),
+                        d.verdict == Verdict::Deny,
+                    )).await;
+                }
                 return d;
             }
         }

@@ -13,11 +13,12 @@ pub struct Skill {
 
 pub struct SkillManager {
     skills: Vec<Skill>,
+    lookup: HashMap<String, usize>,
 }
 
 impl SkillManager {
     pub fn new() -> Self {
-        Self { skills: vec![] }
+        Self { skills: vec![], lookup: HashMap::new() }
     }
 
     /// Load skills from standard directories: .bitcode/, .claude/, .agents/
@@ -42,6 +43,8 @@ impl SkillManager {
             let path = entry.path();
             if path.extension().and_then(|e| e.to_str()) == Some("md") {
                 if let Ok(s) = parse_skill_file(path) {
+                    let idx = self.skills.len();
+                    self.lookup.insert(s.name.clone(), idx);
                     self.skills.push(s);
                 }
             }

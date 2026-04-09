@@ -80,7 +80,7 @@ impl LlmValidator for GuardAgent {
 fn parse_verdict(text: &str) -> Decision {
     let upper = text.to_uppercase();
     if upper.starts_with("ALLOW") {
-        Decision::allow(text)
+        Decision { verdict: Verdict::Allow, reason: text.to_string() }
     } else if upper.starts_with("DENY") {
         let reason = text
             .splitn(2, ':')
@@ -88,7 +88,7 @@ fn parse_verdict(text: &str) -> Decision {
             .unwrap_or(text)
             .trim()
             .to_string();
-        Decision::deny(reason)
+        Decision { verdict: Verdict::Deny, reason }
     } else if upper.starts_with("ASK") {
         let reason = text
             .splitn(2, ':')
@@ -96,9 +96,9 @@ fn parse_verdict(text: &str) -> Decision {
             .unwrap_or(text)
             .trim()
             .to_string();
-        Decision::ask(reason)
+        Decision { verdict: Verdict::Ask, reason }
     } else {
-        Decision::ask(format!("Unclear guard response: {text}"))
+        Decision { verdict: Verdict::Ask, reason: format!("Unclear guard response: {text}") }
     }
 }
 

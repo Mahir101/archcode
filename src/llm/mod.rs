@@ -5,11 +5,11 @@ pub mod provider;
 pub use anthropic::AnthropicProvider;
 pub use openai::OpenAIProvider;
 pub use provider::{
-    Backend, CompletionParams, CompletionResponse, ContentBlock, ContentType, FinishReason,
+    Backend, CompletionParams, CompletionResponse, ContentBlock, FinishReason,
     LlmProvider, Message, ProviderConfig, Role, ToolCall, ToolCallResult, ToolDef,
 };
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 
 /// Factory: build the right provider from config.
 pub fn new_provider(cfg: ProviderConfig) -> Result<Box<dyn LlmProvider + Send + Sync>> {

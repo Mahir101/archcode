@@ -17,6 +17,16 @@ pub struct Event {
 }
 
 impl Event {
+    pub fn text(message: impl Into<String>) -> Self {
+        Self {
+            name: "Info".into(),
+            args: vec![],
+            message: message.into(),
+            preview_type: PreviewType::Text,
+            is_error: false,
+        }
+    }
+
     pub fn tool(name: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             name: name.into(),

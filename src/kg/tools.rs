@@ -65,8 +65,9 @@ impl Tool for KGIndexTool {
         .await?;
 
         Ok(ToolResult::ok(format!(
-            "Indexed {path}. {}",
-            self.kg.stats()
+            "Indexed {path}. {}\n{}",
+            self.kg.stats(),
+            self.kg.session_summary()
         )))
     }
 }
@@ -450,7 +451,9 @@ impl Tool for KGLintTool {
         let mut store = self.lint_store.lock().unwrap();
         store.ingest(diags);
 
-        let summary = store.summary();
+        // Use kg to report stats alongside lint results
+        let kg_stats = self.kg.stats();
+        let summary = format!("{} | {}", store.summary(), kg_stats);
 
         if let Some(ref file) = filter_file {
             let file_diags = store.for_file(file);
