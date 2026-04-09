@@ -251,9 +251,6 @@ async fn main() -> Result<()> {
 
     let (events_tx, mut events_rx) = mpsc::channel::<Event>(128);
 
-    // Send a startup event
-    let _ = events_tx.send(Event::text(format!("archcode started with model: {model}"))).await;
-
     // Spawn event printer
     tokio::spawn(async move {
         while let Some(evt) = events_rx.recv().await {
@@ -275,23 +272,41 @@ async fn main() -> Result<()> {
 
     let mut agent = Agent::new(
         Arc::from(provider),
-        model,
+        model.clone(),
         tool_mgr,
         guard_mgr,
         reminder_mgr,
         system_prompt,
-        events_tx,
+        events_tx.clone(),
         cwd,
     );
 
     if let Some(prompt) = cli.prompt {
+        // Send startup event in single-shot mode
+        let _ = events_tx.send(Event::text(format!("archcode started with model: {model}"))).await;
         // Single-shot mode
         let result = agent.run(&prompt).await?;
         println!("{result}");
     } else {
         // Interactive REPL mode
-        println!("archcode v{} — by Mahir101", env!("CARGO_PKG_VERSION"));
-        println!("Type your prompt and press Enter. Ctrl+C to exit.\n");
+        println!("\x1b[1;36m");
+        println!("   ╔══════════════════════════════════════════════════╗");
+        println!("   ║                                                  ║");
+        println!("   ║   \x1b[1;37m █████╗ ██████╗  ██████╗██╗  ██╗\x1b[1;36m              ║");
+        println!("   ║   \x1b[1;37m██╔══██╗██╔══██╗██╔════╝██║  ██║\x1b[1;36m              ║");
+        println!("   ║   \x1b[1;37m███████║██████╔╝██║     ███████║\x1b[1;36m              ║");
+        println!("   ║   \x1b[1;37m██╔══██║██╔══██╗██║     ██╔══██║\x1b[1;36m              ║");
+        println!("   ║   \x1b[1;37m██║  ██║██║  ██║╚██████╗██║  ██║\x1b[1;36m              ║");
+        println!("   ║   \x1b[1;37m╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝\x1b[1;36m              ║");
+        println!("   ║                                                  ║");
+        println!("   ║   \x1b[0;36marchcode v{:<8}\x1b[1;36m  \x1b[0;90m— agentic AI assistant\x1b[1;36m    ║", env!("CARGO_PKG_VERSION"));
+        println!("   ║   \x1b[0;90mby Mahir101\x1b[1;36m                                    ║");
+        println!("   ║   \x1b[0;90mmodel: {:<42}\x1b[1;36m║", &model);
+        println!("   ║                                                  ║");
+        println!("   ╠══════════════════════════════════════════════════╣");
+        println!("   ║  \x1b[0;33m/quit\x1b[1;36m or \x1b[0;33m/exit\x1b[1;36m to leave  •  \x1b[0;33mCtrl+C\x1b[1;36m to abort    ║");
+        println!("   ╚══════════════════════════════════════════════════╝");
+        println!("\x1b[0m");
 
         let stdin = tokio::io::stdin();
         use tokio::io::AsyncBufReadExt;
@@ -299,14 +314,19 @@ async fn main() -> Result<()> {
         let mut lines = reader.lines();
 
         loop {
-            eprint!("> ");
+            eprint!("\x1b[1;32m❯ \x1b[0m");
             match lines.next_line().await? {
                 None => break,
-                Some(ref s) if s.trim() == "/quit" || s.trim() == "/exit" => break,
+                Some(ref s) if s.trim() == "/quit" || s.trim() == "/exit" => {
+                    println!("\x1b[0;90m👋 Goodbye!\x1b[0m");
+                    break;
+                }
                 Some(ref line) if line.trim().is_empty() => continue,
                 Some(line) => match agent.run(&line).await {
-                    Ok(resp) => println!("\n{resp}\n"),
-                    Err(e) => eprintln!("Error: {e}"),
+                    Ok(resp) => {
+                        println!("\n\x1b[0;37m{resp}\x1b[0m\n");
+                    }
+                    Err(e) => eprintln!("\x1b[1;31m✖ Error:\x1b[0m {e}"),
                 },
             }
         }
