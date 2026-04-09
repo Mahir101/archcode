@@ -1,0 +1,199 @@
+rules:
+  # ─── Single Responsibility Principle ─────────────────────────────────────
+  - id: srp-god-object-python
+    patterns:
+      - pattern: |
+          class $CLASS:
+              ...
+    message: |
+      Potential God Object: class `$CLASS` may be doing too much.
+      If it mixes IO, business logic, and formatting, consider Extract Class.
+      See: refactoring/recipes/extract-class.md
+    languages: [python]
+    severity: WARNING
+    metadata:
+      principle: SRP
+      smell: LargeClass
+      recipe: refactoring/recipes/extract-class.md
+
+  - id: srp-long-function-python
+    patterns:
+      - pattern: |
+          def $FUNC(...):
+              ...
+              ...
+              ...
+              ...
+              ...
+              ...
+              ...
+              ...
+              ...
+              ...
+              ...
+              ...
+              ...
+              ...
+              ...
+              ...
+              ...
+              ...
+              ...
+              ...
+              ...
+              ...
+              ...
+              ...
+              ...
+              ...
+              ...
+              ...
+              ...
+              ...
+    message: |
+      Long function `$FUNC` (30+ lines). Consider Extract Function.
+      See: refactoring/recipes/extract-function.md
+    languages: [python]
+    severity: WARNING
+    metadata:
+      principle: SRP
+      smell: LongMethod
+      recipe: refactoring/recipes/extract-function.md
+
+  # ─── Open/Closed Principle ────────────────────────────────────────────────
+  - id: ocp-type-tag-switch-python
+    patterns:
+      - pattern: |
+          if $VAR == $TYPE1:
+              ...
+          elif $VAR == $TYPE2:
+              ...
+          elif $VAR == $TYPE3:
+              ...
+    message: |
+      Type-tag conditional on `$VAR` with 3+ branches.
+      Adding new types requires modifying this code (OCP violation).
+      Consider Replace Conditional with Polymorphism.
+      See: refactoring/recipes/replace-conditional-with-polymorphism.md
+    languages: [python]
+    severity: WARNING
+    metadata:
+      principle: OCP
+      smell: SwitchStatement
+      recipe: refactoring/recipes/replace-conditional-with-polymorphism.md
+
+  - id: ocp-type-tag-ts
+    patterns:
+      - pattern: |
+          if ($VAR === $TYPE1) {
+            ...
+          } else if ($VAR === $TYPE2) {
+            ...
+          } else if ($VAR === $TYPE3) {
+            ...
+          }
+    message: |
+      Type-tag conditional with 3+ branches — OCP smell.
+      Consider polymorphism. See: refactoring/recipes/replace-conditional-with-polymorphism.md
+    languages: [typescript, javascript]
+    severity: WARNING
+    metadata:
+      principle: OCP
+      smell: SwitchStatement
+
+  # ─── Dependency Inversion Principle ──────────────────────────────────────
+  - id: dip-new-in-constructor-ts
+    patterns:
+      - pattern: |
+          constructor(...) {
+            ...
+            this.$FIELD = new $CONCRETE(...);
+            ...
+          }
+    message: |
+      Concrete instantiation inside constructor — DIP violation.
+      `$CONCRETE` should be injected, not constructed here.
+      See: refactoring/recipes/dependency-inversion.md
+    languages: [typescript, javascript]
+    severity: WARNING
+    metadata:
+      principle: DIP
+      smell: DependencyViolation
+      recipe: refactoring/recipes/dependency-inversion.md
+
+  - id: dip-new-in-constructor-python
+    patterns:
+      - pattern: |
+          def __init__(self, ...):
+              ...
+              self.$FIELD = $CONCRETE(...)
+              ...
+    message: |
+      Concrete instantiation in `__init__` — DIP violation.
+      Inject `$CONCRETE` via the constructor parameter instead.
+      See: refactoring/recipes/dependency-inversion.md
+    languages: [python]
+    severity: WARNING
+    metadata:
+      principle: DIP
+      smell: DependencyViolation
+
+  # ─── Long Parameter List ──────────────────────────────────────────────────
+  - id: isp-long-param-list-ts
+    patterns:
+      - pattern: |
+          function $FUNC($A, $B, $C, $D, $E, ...) { ... }
+      - pattern: |
+          ($A, $B, $C, $D, $E, ...) => { ... }
+    message: |
+      Function `$FUNC` has 5+ parameters — consider a Parameter Object.
+      See: refactoring/recipes/introduce-parameter-object.md
+    languages: [typescript, javascript]
+    severity: WARNING
+    metadata:
+      principle: ISP
+      smell: LongParameterList
+      recipe: refactoring/recipes/introduce-parameter-object.md
+
+  - id: isp-long-param-list-python
+    patterns:
+      - pattern: |
+          def $FUNC($SELF, $A, $B, $C, $D, $E, ...): ...
+    message: |
+      Method `$FUNC` has 5+ parameters — consider a Parameter Object.
+      See: refactoring/recipes/introduce-parameter-object.md
+    languages: [python]
+    severity: WARNING
+    metadata:
+      principle: ISP
+      smell: LongParameterList
+
+  # ─── Feature Envy ─────────────────────────────────────────────────────────
+  - id: feature-envy-chain-ts
+    patterns:
+      - pattern: $A.$B.$C.$D.$E
+    message: |
+      Deep access chain `$A.$B.$C.$D.$E` — possible Feature Envy or Law of Demeter violation.
+      Consider Move Method or adding a dedicated accessor.
+      See: refactoring/recipes/move-method.md
+    languages: [typescript, javascript]
+    severity: INFO
+    metadata:
+      principle: OOP
+      smell: FeatureEnvy
+
+  # ─── Magic Values ─────────────────────────────────────────────────────────
+  - id: primitive-obsession-magic-string-ts
+    patterns:
+      - pattern: |
+          if ($VAR === "$LITERAL") { ... }
+      - pattern: |
+          $VAR === "$LITERAL" ? ... : ...
+    message: |
+      Magic string comparison on `$LITERAL` — possible Primitive Obsession.
+      Consider introducing a typed constant or enum.
+    languages: [typescript, javascript]
+    severity: INFO
+    metadata:
+      principle: SRP
+      smell: PrimitiveObsession

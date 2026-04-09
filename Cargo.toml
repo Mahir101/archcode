@@ -1,0 +1,82 @@
+[package]
+name = "rapcode"
+version = "0.1.0"
+edition = "2021"
+authors = ["Mahir101"]
+description = "rapcode — agentic AI coding assistant with multi-agent orchestration"
+repository = "https://github.com/Mahir101/rapcode"
+
+[[bin]]
+name = "rapcode"
+path = "src/main.rs"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json", "stream"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Config / env
+dotenvy = "0.15"
+toml = "0.8"
+
+# TUI
+ratatui = "0.28"
+crossterm = "0.28"
+
+# LLM streaming (SSE)
+eventsource-stream = "0.2"
+futures-util = "0.3"
+
+# Markdown rendering in terminal
+termimad = "0.30"
+
+# Knowledge graph
+petgraph = "0.6"
+
+# File embed
+rust-embed = "8"
+
+# Glob / file walking
+glob = "0.3"
+walkdir = "2"
+
+# Regex
+regex = "1"
+
+# Error handling
+anyhow = "1"
+thiserror = "1"
+
+# UUID
+uuid = { version = "1", features = ["v4"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# CLI args
+clap = { version = "4", features = ["derive"] }
+
+# Datetime
+chrono = { version = "0.4", features = ["serde"] }
+
+# Async trait support
+async-trait = "0.1"
+
+# Channel
+tokio-stream = "0.1"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
