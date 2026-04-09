@@ -127,7 +127,11 @@ impl Message {
     pub fn text(&self) -> String {
         self.content
             .iter()
-            .filter_map(|b| b.text.as_deref())
+            .filter_map(|b| {
+                b.text
+                    .as_deref()
+                    .or_else(|| b.tool_result.as_ref().map(|tr| tr.content.as_str()))
+            })
             .collect::<Vec<_>>()
             .join("")
     }

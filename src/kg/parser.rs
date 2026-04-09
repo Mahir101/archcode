@@ -182,8 +182,8 @@ fn parse_go(src: &str) -> ParsedSymbols {
     for cap in type_re.captures_iter(src) {
         let name = cap[1].to_string();
         let kind = match &cap[2] {
-            s if s == "struct" => ClassKind::Struct,
-            s if s == "interface" => ClassKind::Interface,
+            "struct" => ClassKind::Struct,
+            "interface" => ClassKind::Interface,
             _ => ClassKind::Class,
         };
         let line = line_of(src, cap.get(0).unwrap().start());
@@ -216,7 +216,7 @@ fn parse_python(src: &str) -> ParsedSymbols {
     let fn_re = Regex::new(r"(?m)^(\s*)(async\s+)?def\s+(\w+)\s*\(([^)]*)\)").unwrap();
     for cap in fn_re.captures_iter(src) {
         let indent = cap[1].len();
-        let is_async = cap.get(2).map_or(false, |m| !m.as_str().is_empty());
+        let is_async = cap.get(2).is_some_and(|m| !m.as_str().is_empty());
         let name = cap[3].to_string();
         let sig = cap[0].trim().to_string();
         let line = line_of(src, cap.get(0).unwrap().start());

@@ -353,11 +353,12 @@ impl Tool for BaselineTool {
             && (format.ok || format.skipped)
             && (semgrep.ok || semgrep.skipped);
 
-        let mut parts = vec![];
-        parts.push(fmt_status("tests", &tests));
-        parts.push(fmt_status("lint", &lint));
-        parts.push(fmt_status("format", &format));
-        parts.push(fmt_status("semgrep", &semgrep));
+        let parts = [
+            fmt_status("tests", &tests),
+            fmt_status("lint", &lint),
+            fmt_status("format", &format),
+            fmt_status("semgrep", &semgrep),
+        ];
 
         let report = BaselineReport {
             tests,

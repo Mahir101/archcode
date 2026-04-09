@@ -69,7 +69,7 @@ impl LlmValidator for GuardAgent {
                     let text = text.trim();
                     return Ok(parse_verdict(text));
                 }
-                _ => break,
+                _ => continue,
             }
         }
 
@@ -86,8 +86,8 @@ fn parse_verdict(text: &str) -> Decision {
         }
     } else if upper.starts_with("DENY") {
         let reason = text
-            .splitn(2, ':')
-            .nth(1)
+            .split_once(':')
+            .map(|(_, r)| r)
             .unwrap_or(text)
             .trim()
             .to_string();
@@ -97,8 +97,8 @@ fn parse_verdict(text: &str) -> Decision {
         }
     } else if upper.starts_with("ASK") {
         let reason = text
-            .splitn(2, ':')
-            .nth(1)
+            .split_once(':')
+            .map(|(_, r)| r)
             .unwrap_or(text)
             .trim()
             .to_string();

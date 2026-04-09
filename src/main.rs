@@ -106,7 +106,7 @@ fn build_tool_manager(cwd: &str) -> (Arc<ToolManager>, TodoStore) {
     mgr.register(KGRelateTool { kg: kg.clone() });
     mgr.register(KGLintTool {
         kg: kg.clone(),
-        lint_store: lint_store,
+        lint_store,
     });
 
     (Arc::new(mgr), store)
