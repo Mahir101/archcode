@@ -1,13 +1,13 @@
 [package]
-name = "rapcode"
+name = "archcode"
 version = "0.1.0"
 edition = "2021"
 authors = ["Mahir101"]
-description = "rapcode — agentic AI coding assistant with multi-agent orchestration"
-repository = "https://github.com/Mahir101/rapcode"
+description = "archcode — agentic AI coding assistant with multi-agent orchestration"
+repository = "https://github.com/Mahir101/archcode"
 
 [[bin]]
-name = "rapcode"
+name = "archcode"
 path = "src/main.rs"
 
 [dependencies]

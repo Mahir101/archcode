@@ -26,7 +26,7 @@ Ensure you have Rust and Cargo installed, then build the project:
 cargo build --release
 ```
 
-The compiled binary will be located at `target/release/rapcode`.
+The compiled binary will be located at `target/release/archcode`.
 
 ## Usage
 
@@ -39,7 +39,7 @@ Simply run the binary without arguments to enter the interactive chat interface:
 ```bash
 cargo run
 # or if built in release mode:
-./target/release/rapcode
+./target/release/archcode
 ```
 
 ### Single-shot Prompt
@@ -49,7 +49,7 @@ If you want to run a specific command non-interactively, use the `--prompt` flag
 ```bash
 cargo run -- --prompt "Refactor the src/utils.rs file to reduce duplication"
 # or
-./target/release/rapcode --prompt "Refactor the src/utils.rs file to reduce duplication"
+./target/release/archcode --prompt "Refactor the src/utils.rs file to reduce duplication"
 ```
 
 ### Flags & Options
@@ -59,7 +59,7 @@ cargo run -- --prompt "Refactor the src/utils.rs file to reduce duplication"
 - `--refactor`: Enables SOLID Refactoring Mode. Injects playbook rules into the system prompt and prioritizes refactoring tools.
 
 ```bash
-./target/release/rapcode --refactor --prompt "Analyze my codebase for SOLID principle smells"
+./target/release/archcode --refactor --prompt "Analyze my codebase for SOLID principle smells"
 ```
 
 ## Project Structure

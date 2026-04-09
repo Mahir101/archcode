@@ -52,7 +52,7 @@ impl RefactorResult {
     }
 }
 
-/// User override config loaded from `.rapcode/refactor.json`
+/// User override config loaded from `.archcode/refactor.json`
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RefactorConfig {
     pub run_tests: Option<String>,
@@ -62,9 +62,9 @@ pub struct RefactorConfig {
 }
 
 impl RefactorConfig {
-    /// Load from `.rapcode/refactor.json` relative to `root`.
+    /// Load from `.archcode/refactor.json` relative to `root`.
     pub fn load(root: &Path) -> Self {
-        let path = root.join(".rapcode").join("refactor.json");
+        let path = root.join(".archcode").join("refactor.json");
         if let Ok(content) = std::fs::read_to_string(&path) {
             serde_json::from_str(&content).unwrap_or_default()
         } else {
@@ -203,7 +203,7 @@ pub fn resolve_command(
     }
     Err(format!(
         "Could not auto-detect `{tool_name}` command. \
-         Create `.rapcode/refactor.json` with a `\"{tool_name}\"` key to override, \
+         Create `.archcode/refactor.json` with a `\"{tool_name}\"` key to override, \
          or install the appropriate toolchain for your stack."
     ))
 }
@@ -325,9 +325,9 @@ mod tests {
     #[test]
     fn config_load_override() {
         let dir = tmp();
-        fs::create_dir_all(dir.path().join(".rapcode")).unwrap();
+        fs::create_dir_all(dir.path().join(".archcode")).unwrap();
         fs::write(
-            dir.path().join(".rapcode").join("refactor.json"),
+            dir.path().join(".archcode").join("refactor.json"),
             r#"{"run_tests":"make test"}"#,
         )
         .unwrap();

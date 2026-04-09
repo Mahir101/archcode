@@ -104,7 +104,7 @@ run_semgrep: semgrep --config refactoring/semgrep-rules/solid-smells.yml .
 
 ## Override via Config
 
-Create `.rapcode/refactor.json` in the project root to override any command:
+Create `.archcode/refactor.json` in the project root to override any command:
 
 ```json
 {
@@ -116,7 +116,7 @@ Create `.rapcode/refactor.json` in the project root to override any command:
 ```
 
 Precedence order (highest → lowest):
-1. `.rapcode/refactor.json` — user override
+1. `.archcode/refactor.json` — user override
 2. Auto-detected from project files (`package.json`, `pyproject.toml`, `pom.xml`, …)
 3. Generic fallback commands
 4. `skipped` — tool not available

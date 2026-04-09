@@ -33,11 +33,11 @@ pub fn detect_backend(model: &str) -> Backend {
 pub fn config_from_env() -> Result<ProviderConfig> {
     dotenvy::dotenv().ok();
 
-    let model = std::env::var("RAPCODE_MODEL")
+    let model = std::env::var("ARCHCODE_MODEL")
         .unwrap_or_else(|_| "gpt-4o".into());
-    let api_key = std::env::var("RAPCODE_API_KEY").unwrap_or_default();
-    let base_url = std::env::var("RAPCODE_BASE_URL").unwrap_or_default();
-    let backend = if let Ok(b) = std::env::var("RAPCODE_PROVIDER") {
+    let api_key = std::env::var("ARCHCODE_API_KEY").unwrap_or_default();
+    let base_url = std::env::var("ARCHCODE_BASE_URL").unwrap_or_default();
+    let backend = if let Ok(b) = std::env::var("ARCHCODE_PROVIDER") {
         match b.as_str() {
             "anthropic" => Backend::Anthropic,
             _ => Backend::OpenAI,

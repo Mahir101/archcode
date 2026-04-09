@@ -26,7 +26,7 @@ impl GuardAgent {
 impl LlmValidator for GuardAgent {
     async fn validate(&self, ctx: &EvalContext) -> Result<Decision> {
         let system = format!(
-            "You are a security guard agent for an AI coding assistant called rapcode.\n\
+            "You are a security guard agent for an AI coding assistant called archcode.\n\
              Your job is to evaluate tool calls for safety and security.\n\
              Working directory: {}\n\n\
              Respond with exactly one of:\n\

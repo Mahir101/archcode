@@ -37,7 +37,7 @@ impl Tool for WebSearchTool {
         );
 
         let client = reqwest::Client::builder()
-            .user_agent("rapcode/0.1 (search)")
+            .user_agent("archcode/0.1 (search)")
             .build()?;
 
         let resp = client.get(&url).send().await

@@ -9,13 +9,13 @@ Powered by [Refactoring.Guru](https://refactoring.guru) patterns, SOLID principl
 
 ```bash
 # Activate refactoring mode (injects playbook into system prompt)
-rapcode --refactor
+archcode --refactor
 
 # Single-shot refactoring session
-rapcode --refactor -p "The OrderService class does too much—fix it"
+archcode --refactor -p "The OrderService class does too much—fix it"
 
 # Tools are always available even without --refactor flag
-rapcode -p "Run refactor.baseline on this project"
+archcode -p "Run refactor.baseline on this project"
 ```
 
 ---
@@ -31,7 +31,7 @@ rapcode -p "Run refactor.baseline on this project"
 | **Tool runner** | 6 agent-callable tools for running tests, lint, format, semgrep, git diff, and full baseline |
 | **Semgrep rules** | Built-in SOLID smell rules for Python, TypeScript, JavaScript (`solid-smells.yml`) |
 | **Auto-detection** | Detects stack (Rust/Node/Python/Java/Maven/Gradle/.NET) and selects the right commands |
-| **Override config** | `.rapcode/refactor.json` for per-project command customization |
+| **Override config** | `.archcode/refactor.json` for per-project command customization |
 
 ---
 
@@ -54,7 +54,7 @@ If a command cannot be detected, the tool returns `skipped: true` with instructi
 
 ## Overriding Commands
 
-Create `.rapcode/refactor.json` in your project root:
+Create `.archcode/refactor.json` in your project root:
 
 ```json
 {

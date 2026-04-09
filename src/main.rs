@@ -34,7 +34,7 @@ use tools::{
 // ---------------------------------------------------------------------------
 
 #[derive(Parser, Debug)]
-#[command(name = "rapcode", version, about = "rapcode — agentic AI coding assistant by Mahir101")]
+#[command(name = "archcode", version, about = "archcode — agentic AI coding assistant by Mahir101")]
 struct Cli {
     /// Single-shot prompt (non-interactive)
     #[arg(short, long)]
@@ -139,7 +139,7 @@ fn build_reminder_manager(skill_mgr: &SkillManager) -> ReminderManager {
 fn build_system_prompt(cwd: &str, refactor_mode: bool) -> String {
     let refactor_section = if refactor_mode { REFACTOR_SYSTEM_SNIPPET } else { "" };
     format!(
-        "You are rapcode, an expert agentic AI coding assistant created by Mahir101.\n\
+        "You are archcode, an expert agentic AI coding assistant created by Mahir101.\n\
          You are running in: {cwd}\n\n\
          You have access to tools: Read, Write, Edit, Glob, Bash, WebSearch, TodoRead, TodoWrite, \
          refactor.baseline, refactor.run_tests, refactor.run_lint, refactor.run_format, \
@@ -205,7 +205,7 @@ async fn main() -> Result<()> {
         println!("{result}");
     } else {
         // Interactive REPL mode
-        println!("rapcode v{} — by Mahir101", env!("CARGO_PKG_VERSION"));
+        println!("archcode v{} — by Mahir101", env!("CARGO_PKG_VERSION"));
         println!("Type your prompt and press Enter. Ctrl+C to exit.\n");
 
         let stdin = tokio::io::stdin();

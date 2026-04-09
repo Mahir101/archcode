@@ -63,7 +63,7 @@ impl Tool for RunTestsTool {
         ToolDefinition {
             name: "refactor.run_tests".into(),
             description: "Run the project test suite. Returns structured JSON with pass/fail status. \
-                          Uses .rapcode/refactor.json override, then auto-detects from project files.".into(),
+                          Uses .archcode/refactor.json override, then auto-detects from project files.".into(),
             parameters: json!({
                 "type": "object",
                 "properties": {},
@@ -100,7 +100,7 @@ impl Tool for RunLintTool {
         ToolDefinition {
             name: "refactor.run_lint".into(),
             description: "Run the project linter. Returns structured JSON with lint results. \
-                          Uses .rapcode/refactor.json override, then auto-detects.".into(),
+                          Uses .archcode/refactor.json override, then auto-detects.".into(),
             parameters: json!({
                 "type": "object",
                 "properties": {},
@@ -137,7 +137,7 @@ impl Tool for RunFormatTool {
         ToolDefinition {
             name: "refactor.run_format".into(),
             description: "Run the project code formatter. Returns structured JSON. \
-                          Uses .rapcode/refactor.json override, then auto-detects.".into(),
+                          Uses .archcode/refactor.json override, then auto-detects.".into(),
             parameters: json!({
                 "type": "object",
                 "properties": {},
@@ -175,7 +175,7 @@ impl Tool for RunSemgrepTool {
             name: "refactor.run_semgrep".into(),
             description: "Run Semgrep with the built-in SOLID smell rules. Returns structured JSON. \
                           Skips gracefully if semgrep is not installed. \
-                          Uses .rapcode/refactor.json override to customize rules.".into(),
+                          Uses .archcode/refactor.json override to customize rules.".into(),
             parameters: json!({
                 "type": "object",
                 "properties": {},

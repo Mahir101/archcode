@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-const INSTRUCTION_FILES: &[&str] = &["CLAUDE.md", "AGENTS.md", "RAPCODE.md"];
+const INSTRUCTION_FILES: &[&str] = &["CLAUDE.md", "AGENTS.md", "ARCHCODE.md"];
 
 pub struct DiscoveredFiles {
     pub project_files: Vec<PathBuf>,
