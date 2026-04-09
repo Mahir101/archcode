@@ -5,6 +5,7 @@ use tokio::sync::mpsc;
 
 use super::manager::{Tool, ToolDefinition, ToolResult};
 use crate::event::Event;
+use crate::utils::human_size;
 
 pub struct ReadTool;
 
@@ -42,6 +43,8 @@ impl Tool for ReadTool {
             Err(e) => return Ok(ToolResult::err(format!("Cannot read {path}: {e}"))),
         };
 
+        let file_size = human_size(content.len() as u64);
+
         let start = args["start_line"].as_u64().map(|n| n as usize).unwrap_or(1);
         let end = args["end_line"].as_u64().map(|n| n as usize);
 
@@ -58,6 +61,7 @@ impl Tool for ReadTool {
             .collect::<Vec<_>>()
             .join("\n");
 
-        Ok(ToolResult::ok(slice))
+        let header = format!("({file_size}, {total} lines)\n");
+        Ok(ToolResult::ok(format!("{header}{slice}")))
     }
 }

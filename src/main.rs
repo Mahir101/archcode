@@ -8,6 +8,7 @@ mod refactor;
 mod reminder;
 mod skills;
 mod tools;
+mod utils;
 
 use anyhow::Result;
 use clap::Parser;
