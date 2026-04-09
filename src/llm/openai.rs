@@ -130,9 +130,13 @@ impl LlmProvider for OpenAIProvider {
 
         let mut content_blocks = vec![];
 
-        if let Some(text) = msg["content"].as_str() {
-            if !text.is_empty() {
-                content_blocks.push(ContentBlock::text(text));
+        // Extract content — fall back to reasoning field for thinking models (qwen3, etc.)
+        let content_text = msg["content"].as_str().unwrap_or("");
+        if !content_text.is_empty() {
+            content_blocks.push(ContentBlock::text(content_text));
+        } else if let Some(reasoning) = msg["reasoning"].as_str() {
+            if !reasoning.is_empty() {
+                content_blocks.push(ContentBlock::text(reasoning));
             }
         }
 
@@ -220,6 +224,7 @@ impl LlmProvider for OpenAIProvider {
             "model": params.model,
             "messages": Self::messages_to_json(&params.messages),
             "stream": true,
+            "stream_options": { "include_usage": true },
         });
 
         if !tools_json.is_empty() {
@@ -273,10 +278,14 @@ impl LlmProvider for OpenAIProvider {
             };
 
             let mut cbs = vec![];
-            if let Some(t) = msg["content"].as_str() {
-                if !t.is_empty() {
-                    let _ = tx.send(StreamEvent::TextDelta(t.to_string()));
-                    cbs.push(ContentBlock::text(t));
+            let content_text = msg["content"].as_str().unwrap_or("");
+            if !content_text.is_empty() {
+                let _ = tx.send(StreamEvent::TextDelta(content_text.to_string()));
+                cbs.push(ContentBlock::text(content_text));
+            } else if let Some(reasoning) = msg["reasoning"].as_str() {
+                if !reasoning.is_empty() {
+                    let _ = tx.send(StreamEvent::TextDelta(reasoning.to_string()));
+                    cbs.push(ContentBlock::text(reasoning));
                 }
             }
             if let Some(tcs) = msg["tool_calls"].as_array() {
@@ -359,11 +368,19 @@ impl LlmProvider for OpenAIProvider {
                 };
             }
 
-            // Parse text delta
+            // Parse text delta (content field)
             if let Some(text) = chunk["choices"][0]["delta"]["content"].as_str() {
                 if !text.is_empty() {
                     accumulated_text.push_str(text);
                     let _ = tx.send(StreamEvent::TextDelta(text.to_string()));
+                }
+            }
+
+            // Parse reasoning delta (qwen3 and other reasoning models)
+            if let Some(reasoning) = chunk["choices"][0]["delta"]["reasoning"].as_str() {
+                if !reasoning.is_empty() && accumulated_text.is_empty() {
+                    // Show reasoning as dimmed text while no content has arrived yet
+                    let _ = tx.send(StreamEvent::TextDelta(reasoning.to_string()));
                 }
             }
 

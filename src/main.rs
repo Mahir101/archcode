@@ -593,7 +593,7 @@ async fn main() -> Result<()> {
                     }
 
                     // Start spinner
-                    let spin = spinner::Spinner::start();
+                    let (spin, spin_handle) = spinner::Spinner::start();
 
                     // Fresh streaming channel for this request
                     let (stx, mut srx) = tokio::sync::mpsc::unbounded_channel::<llm::StreamEvent>();
@@ -606,17 +606,24 @@ async fn main() -> Result<()> {
                             match evt {
                                 llm::StreamEvent::TextDelta(text) => {
                                     if first_text {
-                                        // Clear spinner line and start fresh
+                                        // Stop spinner and wait for it to clear
+                                        spin_handle.stop();
+                                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                                        // Clear line and move to a fresh line
                                         eprint!("\r\x1b[K");
+                                        let _ = std::io::Write::flush(&mut std::io::stderr());
                                         first_text = false;
                                     }
                                     accumulated.push_str(&text);
-                                    print!("{}{text}{}", theme::STREAM_TEXT, theme::RESET);
+                                    print!("{text}");
                                     let _ = std::io::Write::flush(&mut std::io::stdout());
                                 }
                                 llm::StreamEvent::ToolCallStart { name, .. } => {
                                     if first_text {
+                                        spin_handle.stop();
+                                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                                         eprint!("\r\x1b[K");
+                                        let _ = std::io::Write::flush(&mut std::io::stderr());
                                         first_text = false;
                                     }
                                     eprintln!(
@@ -635,18 +642,16 @@ async fn main() -> Result<()> {
 
                     let result = agent.run(&line, Some(stx)).await;
 
-                    // Stop spinner (no-op if already cleared by streaming)
+                    // Stop spinner (no-op if already stopped by stream handler)
                     spin.stop();
 
                     match result {
                         Ok(resp) => {
                             let streamed_text = stream_handle.await.unwrap_or_default();
                             if !streamed_text.is_empty() {
-                                // Text was already streamed live — print a newline
-                                // and render the final markdown version below it
-                                println!();
-                            }
-                            if streamed_text.is_empty() && !resp.is_empty() {
+                                // Text was already streamed live
+                                println!("\n");
+                            } else if !resp.is_empty() {
                                 // Fallback: no streaming happened, render markdown
                                 println!();
                                 markdown::render_markdown(&resp);

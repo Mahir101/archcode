@@ -29,6 +29,20 @@ const THINKING_MESSAGES: &[&str] = &[
     "Generating solution...",
 ];
 
+/// A clonable handle that can stop the spinner from any thread/task.
+#[derive(Clone)]
+pub struct SpinnerHandle {
+    stop: Arc<AtomicBool>,
+}
+
+impl SpinnerHandle {
+    /// Signal the spinner to stop and clear its line.
+    /// Non-blocking — the spinner thread will stop within ~80ms.
+    pub fn stop(&self) {
+        self.stop.store(true, Ordering::Relaxed);
+    }
+}
+
 /// Animated terminal spinner with rotating fun messages.
 pub struct Spinner {
     stop: Arc<AtomicBool>,
@@ -36,11 +50,12 @@ pub struct Spinner {
 }
 
 impl Spinner {
-    /// Start a spinner on a background thread. It writes to stderr so it
-    /// doesn't interfere with stdout content.
-    pub fn start() -> Self {
+    /// Start a spinner on a background thread. Returns `(Spinner, SpinnerHandle)`.
+    /// The handle can be cloned and sent to other tasks to stop the spinner early.
+    pub fn start() -> (Self, SpinnerHandle) {
         let stop = Arc::new(AtomicBool::new(false));
         let stop_clone = stop.clone();
+        let ext_handle = SpinnerHandle { stop: stop.clone() };
 
         let handle = std::thread::spawn(move || {
             let mut frame_idx: usize = 0;
@@ -51,7 +66,6 @@ impl Spinner {
                 let frame = FRAMES[frame_idx % FRAMES.len()];
                 let msg = THINKING_MESSAGES[msg_idx % THINKING_MESSAGES.len()];
 
-                // \r moves to line start, \x1b[K clears the rest of line
                 eprint!("\r\x1b[36m{frame}\x1b[0m \x1b[90m{msg}\x1b[0m\x1b[K");
                 let _ = std::io::stderr().flush();
 
@@ -59,7 +73,6 @@ impl Spinner {
                 frame_idx += 1;
                 ticks += 1;
 
-                // Rotate message every ~3 seconds
                 if ticks.is_multiple_of(38) {
                     msg_idx += 1;
                 }
@@ -70,13 +83,16 @@ impl Spinner {
             let _ = std::io::stderr().flush();
         });
 
-        Self {
-            stop,
-            handle: Some(handle),
-        }
+        (
+            Self {
+                stop,
+                handle: Some(handle),
+            },
+            ext_handle,
+        )
     }
 
-    /// Stop the spinner and clear the line.
+    /// Stop the spinner and wait for the thread to finish.
     pub fn stop(mut self) {
         self.stop.store(true, Ordering::Relaxed);
         if let Some(h) = self.handle.take() {
