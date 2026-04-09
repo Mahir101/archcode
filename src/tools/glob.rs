@@ -38,12 +38,16 @@ impl Tool for GlobTool {
         let base = args["cwd"]
             .as_str()
             .map(|s| s.to_string())
-            .unwrap_or_else(|| {
+            .or_else(|| {
                 std::env::current_dir()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_string()
+                    .ok()
+                    .map(|p| p.to_string_lossy().to_string())
             });
+
+        let base = match base {
+            Some(b) if !b.is_empty() => b,
+            _ => return Ok(ToolResult::err("Cannot determine working directory. Provide a 'cwd' argument.")),
+        };
 
         let full_pattern = if pattern.starts_with('/') {
             pattern.clone()

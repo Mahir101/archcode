@@ -1,10 +1,12 @@
 pub fn human_size(bytes: u64) -> String {
     if bytes < 1024 {
-        return format!("{} B", bytes);
+        format!("{} B", bytes)
     } else if bytes < 1024 * 1024 {
-        return format!("{:.1} KB", bytes as f64 / 1024.0);
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else if bytes < 1024 * 1024 * 1024 {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
     } else {
-        return format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0));
+        format!("{:.1} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
     }
 }
 
@@ -30,6 +32,12 @@ mod tests {
     fn test_mb() {
         assert_eq!(human_size(1024 * 1024), "1.0 MB");
         assert_eq!(human_size(2 * 1024 * 1024), "2.0 MB");
-        assert_eq!(human_size(1023 * 1024 * 1024), "1023.0 MB");
+        assert_eq!(human_size(500 * 1024 * 1024), "500.0 MB");
+    }
+
+    #[test]
+    fn test_gb() {
+        assert_eq!(human_size(1024 * 1024 * 1024), "1.0 GB");
+        assert_eq!(human_size(2 * 1024 * 1024 * 1024), "2.0 GB");
     }
 }

@@ -60,7 +60,7 @@ impl Reminder {
             }
             ScheduleKind::Turn { interval } => {
                 let last = *self.last_turn.lock().unwrap();
-                state.turn > 0 && (state.turn - last) >= *interval
+                state.turn > 0 && state.turn >= last && (state.turn - last) >= *interval
             }
             ScheduleKind::Condition {
                 max_fires,

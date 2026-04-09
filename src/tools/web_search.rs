@@ -55,7 +55,8 @@ impl Tool for WebSearchTool {
         // Very simple extraction — strip HTML tags, take first 2000 chars
         let plain = strip_html(&body);
         let truncated = if plain.len() > 2000 {
-            format!("{}...", &plain[..2000])
+            let end = plain.floor_char_boundary(2000);
+            format!("{}...", &plain[..end])
         } else {
             plain
         };

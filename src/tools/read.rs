@@ -49,6 +49,7 @@ impl Tool for ReadTool {
         let total = lines.len();
         let from = start.saturating_sub(1).min(total);
         let to = end.map(|e| e.min(total)).unwrap_or(total);
+        let to = to.max(from);
 
         let slice: String = lines[from..to]
             .iter()

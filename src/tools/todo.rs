@@ -125,10 +125,22 @@ impl Tool for TodoWriteTool {
             None => return Ok(ToolResult::err("Missing 'todos' array")),
         };
 
-        let items: Vec<TodoItem> = raw
-            .iter()
-            .filter_map(|v| serde_json::from_value(v.clone()).ok())
-            .collect();
+        let mut items = Vec::with_capacity(raw.len());
+        let mut errors = Vec::new();
+        for (i, v) in raw.iter().enumerate() {
+            match serde_json::from_value::<TodoItem>(v.clone()) {
+                Ok(item) => items.push(item),
+                Err(e) => errors.push(format!("item {}: {e}", i + 1)),
+            }
+        }
+
+        if !errors.is_empty() {
+            return Ok(ToolResult::err(format!(
+                "Failed to parse {} todo(s): {}",
+                errors.len(),
+                errors.join("; ")
+            )));
+        }
 
         let count = items.len();
         self.store.write(items);
