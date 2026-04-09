@@ -338,6 +338,9 @@ impl LlmProvider for OpenAIProvider {
         let mut accumulated_text = String::new();
         let mut finish_reason = FinishReason::Unknown;
         let mut usage = TokenUsage::default();
+        // Buffer text that might be a JSON tool call (Ollama streams tool calls as content)
+        let mut text_buffer = String::new();
+        let mut buffering_json = true; // Start buffering until we know it's not JSON
 
         // Tool call accumulators: index -> (id, name, arguments)
         let mut tool_calls_acc: std::collections::HashMap<usize, (String, String, String)> =
@@ -368,24 +371,10 @@ impl LlmProvider for OpenAIProvider {
                 };
             }
 
-            // Parse text delta (content field)
-            if let Some(text) = chunk["choices"][0]["delta"]["content"].as_str() {
-                if !text.is_empty() {
-                    accumulated_text.push_str(text);
-                    let _ = tx.send(StreamEvent::TextDelta(text.to_string()));
-                }
-            }
-
-            // Parse reasoning delta (qwen3 and other reasoning models)
-            if let Some(reasoning) = chunk["choices"][0]["delta"]["reasoning"].as_str() {
-                if !reasoning.is_empty() && accumulated_text.is_empty() {
-                    // Show reasoning as dimmed text while no content has arrived yet
-                    let _ = tx.send(StreamEvent::TextDelta(reasoning.to_string()));
-                }
-            }
-
-            // Parse tool call deltas
+            // Parse tool call deltas first to detect tool_call mode
+            let mut has_tool_calls_in_chunk = false;
             if let Some(tcs) = chunk["choices"][0]["delta"]["tool_calls"].as_array() {
+                has_tool_calls_in_chunk = !tcs.is_empty();
                 for tc in tcs {
                     let index = tc["index"].as_u64().unwrap_or(0) as usize;
                     let entry = tool_calls_acc
@@ -412,6 +401,40 @@ impl LlmProvider for OpenAIProvider {
                 }
             }
 
+            // Parse text deltas only when not accumulating tool calls
+            // (Ollama sometimes echoes tool call JSON in the content field)
+            if !has_tool_calls_in_chunk && tool_calls_acc.is_empty() {
+                if let Some(text) = chunk["choices"][0]["delta"]["content"].as_str() {
+                    if !text.is_empty() {
+                        accumulated_text.push_str(text);
+                        if buffering_json {
+                            text_buffer.push_str(text);
+                            let trimmed = text_buffer.trim_start();
+                            // Keep buffering if it looks like JSON or markdown-wrapped JSON
+                            let looks_like_json = trimmed.starts_with('{')
+                                || trimmed.starts_with('[')
+                                || trimmed.starts_with("```");
+                            if !trimmed.is_empty() && !looks_like_json {
+                                // Not JSON — flush buffer and switch to streaming mode
+                                let _ = tx.send(StreamEvent::TextDelta(text_buffer.clone()));
+                                text_buffer.clear();
+                                buffering_json = false;
+                            }
+                        } else {
+                            let _ = tx.send(StreamEvent::TextDelta(text.to_string()));
+                        }
+                    }
+                }
+                // Parse reasoning delta (qwen3 and other reasoning models)
+                if let Some(reasoning) = chunk["choices"][0]["delta"]["reasoning"].as_str() {
+                    if !reasoning.is_empty() && accumulated_text.is_empty() {
+                        // Reasoning is never a tool call — stream immediately
+                        buffering_json = false;
+                        let _ = tx.send(StreamEvent::TextDelta(reasoning.to_string()));
+                    }
+                }
+            }
+
             // Parse usage (some providers include it in the final chunk)
             if let Some(u) = chunk.get("usage") {
                 usage.input_tokens = u["prompt_tokens"].as_u64().unwrap_or(usage.input_tokens);
@@ -422,6 +445,18 @@ impl LlmProvider for OpenAIProvider {
 
         // Build content blocks
         let mut content_blocks = vec![];
+
+        // If we buffered text that turned out NOT to be a tool call, flush it now
+        if !text_buffer.is_empty() {
+            // Check if it parses as a tool call before deciding to flush
+            let maybe_tool_calls = extract_text_tool_calls(&text_buffer);
+            if maybe_tool_calls.is_empty() {
+                // Not a tool call — send as text
+                let _ = tx.send(StreamEvent::TextDelta(text_buffer));
+            }
+            // If it IS a tool call, don't send TextDelta; the fallback below handles it
+        }
+
         if !accumulated_text.is_empty() {
             content_blocks.push(ContentBlock::text(&accumulated_text));
         }

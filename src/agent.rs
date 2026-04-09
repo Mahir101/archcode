@@ -175,6 +175,16 @@ impl Agent {
                         let args: serde_json::Value =
                             serde_json::from_str(&tc.arguments).unwrap_or(serde_json::json!({}));
 
+                        // Notify stream handler about tool call (stops spinner)
+                        if let Some(stx) = &stream_tx {
+                            let _ = stx.send(StreamEvent::ToolCallStart {
+                                id: tc.id.clone(),
+                                name: tc.name.clone(),
+                            });
+                            // Brief yield so the stream handler can stop the spinner
+                            tokio::task::yield_now().await;
+                        }
+
                         // Guard evaluation
                         let eval_ctx = EvalContext {
                             tool_name: tc.name.clone(),

@@ -333,7 +333,7 @@ async fn main() -> Result<()> {
                 format!(" [{}]", evt.args.join(", "))
             };
             eprintln!(
-                "{prefix} {}:{extra} {}{error_marker}",
+                "\r\x1b[K{prefix} {}:{extra} {}{error_marker}",
                 evt.name, evt.message
             );
         }
