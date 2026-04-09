@@ -341,9 +341,6 @@ async fn main() -> Result<()> {
 
     let interactive = cli.prompt.is_none();
 
-    // Create streaming channel for live LLM output
-    let (stream_tx, stream_rx) = tokio::sync::mpsc::unbounded_channel::<llm::StreamEvent>();
-
     let mut agent = Agent::new(
         Arc::from(provider),
         model.clone(),
@@ -356,11 +353,6 @@ async fn main() -> Result<()> {
         cost_tracker.clone(),
         interactive,
     );
-
-    // Enable streaming in agent
-    agent.set_stream_sender(stream_tx);
-    // Keep stream_rx for use in the REPL loop
-    let stream_rx = std::sync::Arc::new(tokio::sync::Mutex::new(stream_rx));
 
     // Resume session if requested
     if cli.resume.is_some() {
@@ -391,12 +383,13 @@ async fn main() -> Result<()> {
             .send(Event::text(format!("archcode started with model: {model}")))
             .await;
 
-        // Spawn streaming printer for single-shot mode
-        let srx = stream_rx.clone();
+        // Fresh streaming channel for this request
+        let (stx, mut srx) = tokio::sync::mpsc::unbounded_channel::<llm::StreamEvent>();
+
+        // Spawn streaming printer
         let stream_handle = tokio::spawn(async move {
-            let mut rx = srx.lock().await;
             let mut got_text = false;
-            while let Some(evt) = rx.recv().await {
+            while let Some(evt) = srx.recv().await {
                 match evt {
                     llm::StreamEvent::TextDelta(text) => {
                         if !got_text {
@@ -412,7 +405,7 @@ async fn main() -> Result<()> {
             got_text
         });
 
-        let result = agent.run(&prompt).await?;
+        let result = agent.run(&prompt, Some(stx)).await?;
         let got_text = stream_handle.await.unwrap_or(false);
 
         // If streaming didn't deliver text (e.g. fallback), print result
@@ -602,13 +595,14 @@ async fn main() -> Result<()> {
                     // Start spinner
                     let spin = spinner::Spinner::start();
 
+                    // Fresh streaming channel for this request
+                    let (stx, mut srx) = tokio::sync::mpsc::unbounded_channel::<llm::StreamEvent>();
+
                     // Spawn streaming text printer
-                    let srx = stream_rx.clone();
                     let stream_handle = tokio::spawn(async move {
-                        let mut rx = srx.lock().await;
                         let mut accumulated = String::new();
                         let mut first_text = true;
-                        while let Some(evt) = rx.recv().await {
+                        while let Some(evt) = srx.recv().await {
                             match evt {
                                 llm::StreamEvent::TextDelta(text) => {
                                     if first_text {
@@ -639,7 +633,7 @@ async fn main() -> Result<()> {
                         accumulated
                     });
 
-                    let result = agent.run(&line).await;
+                    let result = agent.run(&line, Some(stx)).await;
 
                     // Stop spinner (no-op if already cleared by streaming)
                     spin.stop();

@@ -220,6 +220,7 @@ pub trait LlmProvider {
     fn model(&self) -> &str;
 
     /// Streaming completion — sends deltas through `tx` while accumulating the full response.
+    /// Does NOT send `StreamEvent::Done` — the caller is responsible for that.
     /// Default implementation falls back to non-streaming `complete()`.
     async fn stream_complete(
         &self,
@@ -231,7 +232,6 @@ pub trait LlmProvider {
         if !text.is_empty() {
             let _ = tx.send(StreamEvent::TextDelta(text));
         }
-        let _ = tx.send(StreamEvent::Done);
         Ok(resp)
     }
 }

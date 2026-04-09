@@ -248,6 +248,81 @@ impl LlmProvider for OpenAIProvider {
             anyhow::bail!("OpenAI API error {status}: {text}");
         }
 
+        // Check if the server actually returned a streaming response.
+        // Some backends (Ollama, local proxies) may ignore "stream":true
+        // and return a plain JSON response instead.
+        let content_type = resp
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+
+        // If the response is NOT event-stream, parse it as a regular JSON response
+        if !content_type.contains("text/event-stream") && !content_type.contains("text/plain") {
+            let text = resp.text().await?;
+            let json: Value = serde_json::from_str(&text)?;
+            let choice = &json["choices"][0];
+            let msg = &choice["message"];
+
+            let mut finish = match choice["finish_reason"].as_str().unwrap_or("") {
+                "stop" => FinishReason::Stop,
+                "tool_calls" => FinishReason::ToolCalls,
+                "length" => FinishReason::Length,
+                _ => FinishReason::Unknown,
+            };
+
+            let mut cbs = vec![];
+            if let Some(t) = msg["content"].as_str() {
+                if !t.is_empty() {
+                    let _ = tx.send(StreamEvent::TextDelta(t.to_string()));
+                    cbs.push(ContentBlock::text(t));
+                }
+            }
+            if let Some(tcs) = msg["tool_calls"].as_array() {
+                for tc in tcs {
+                    let id = tc["id"].as_str().unwrap_or("").to_string();
+                    let name = tc["function"]["name"].as_str().unwrap_or("").to_string();
+                    let arguments = tc["function"]["arguments"]
+                        .as_str()
+                        .unwrap_or("{}")
+                        .to_string();
+                    cbs.push(ContentBlock::tool_call(ToolCall { id, name, arguments }));
+                }
+            }
+
+            // Ollama fallback: tool calls embedded in text
+            let has_tc = cbs.iter().any(|b| b.content_type == "tool_call");
+            if !has_tc {
+                if let Some(tb) = cbs.first().cloned() {
+                    if tb.content_type == "text" {
+                        if let Some(t) = &tb.text {
+                            let extracted = extract_text_tool_calls(t);
+                            if !extracted.is_empty() {
+                                cbs = extracted.into_iter().map(ContentBlock::tool_call).collect();
+                                finish = FinishReason::ToolCalls;
+                            }
+                        }
+                    }
+                }
+            }
+
+            let u = TokenUsage {
+                input_tokens: json["usage"]["prompt_tokens"].as_u64().unwrap_or(0),
+                output_tokens: json["usage"]["completion_tokens"].as_u64().unwrap_or(0),
+            };
+
+            return Ok(CompletionResponse {
+                message: Message {
+                    role: Role::Assistant,
+                    content: cbs,
+                    tool_call_id: None,
+                },
+                finish_reason: finish,
+                usage: u,
+            });
+        }
+
         // Parse SSE stream
         let mut stream = resp.bytes_stream().eventsource();
 
@@ -327,8 +402,6 @@ impl LlmProvider for OpenAIProvider {
                     u["completion_tokens"].as_u64().unwrap_or(usage.output_tokens);
             }
         }
-
-        let _ = tx.send(StreamEvent::Done);
 
         // Build content blocks
         let mut content_blocks = vec![];

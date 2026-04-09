@@ -7,7 +7,7 @@ use crate::event::Event;
 use crate::guard::{EvalContext, GuardManager, Verdict};
 use crate::llm::{
     CompletionParams, CompletionResponse, ContentBlock, FinishReason, LlmProvider, Message,
-    StreamSender, ToolCall, ToolCallResult, ToolDef,
+    StreamEvent, StreamSender, ToolCall, ToolCallResult, ToolDef,
 };
 use crate::reminder::{ConversationState, ReminderManager};
 use crate::tools::ToolManager;
@@ -26,7 +26,6 @@ pub struct Agent {
     working_dir: String,
     cost_tracker: CostTracker,
     interactive: bool,
-    stream_tx: Option<StreamSender>,
 }
 
 impl Agent {
@@ -55,13 +54,7 @@ impl Agent {
             working_dir,
             cost_tracker,
             interactive,
-            stream_tx: None,
         }
-    }
-
-    /// Set a stream sender for live streaming of LLM text output.
-    pub fn set_stream_sender(&mut self, tx: StreamSender) {
-        self.stream_tx = Some(tx);
     }
 
     pub fn messages(&self) -> &[Message] {
@@ -72,7 +65,13 @@ impl Agent {
         &mut self.messages
     }
 
-    pub async fn run(&mut self, user_input: &str) -> Result<String> {
+    /// Run the agent loop. If `stream_tx` is provided, text deltas are streamed
+    /// in real-time. A fresh channel should be created per call.
+    pub async fn run(
+        &mut self,
+        user_input: &str,
+        stream_tx: Option<StreamSender>,
+    ) -> Result<String> {
         if self.messages.is_empty() {
             self.messages.push(Message::system(&self.system_prompt));
         }
@@ -114,10 +113,24 @@ impl Agent {
                 temperature: None,
             };
 
-            let resp: CompletionResponse = if let Some(stx) = &self.stream_tx {
-                self.provider
-                    .stream_complete(completion_params, stx.clone())
-                    .await?
+            let resp: CompletionResponse = if let Some(stx) = &stream_tx {
+                match self
+                    .provider
+                    .stream_complete(completion_params.clone(), stx.clone())
+                    .await
+                {
+                    Ok(r) => r,
+                    Err(e) => {
+                        // Streaming failed — fall back to non-streaming
+                        let _ = self
+                            .events_tx
+                            .send(Event::text(format!(
+                                "Streaming failed ({e}), falling back..."
+                            )))
+                            .await;
+                        self.provider.complete(completion_params).await?
+                    }
+                }
             } else {
                 self.provider.complete(completion_params).await?
             };
@@ -130,6 +143,9 @@ impl Agent {
 
             match resp.finish_reason {
                 FinishReason::Stop => {
+                    if let Some(stx) = &stream_tx {
+                        let _ = stx.send(StreamEvent::Done);
+                    }
                     return Ok(resp.message.text());
                 }
                 FinishReason::Length => {
@@ -146,6 +162,9 @@ impl Agent {
                             .push(Message::user("Please continue from where you left off."));
                         continue;
                     } else {
+                        if let Some(stx) = &stream_tx {
+                            let _ = stx.send(StreamEvent::Done);
+                        }
                         return Ok(resp.message.text());
                     }
                 }
@@ -257,6 +276,9 @@ impl Agent {
         }
 
         // If we exhausted the turn budget, push a final assistant message
+        if let Some(stx) = &stream_tx {
+            let _ = stx.send(StreamEvent::Done);
+        }
         let fallback = "Reached maximum turns without a final response.".to_string();
         self.messages.push(Message::assistant(&fallback));
         Ok(self.messages.last().map(|m| m.text()).unwrap_or_default())

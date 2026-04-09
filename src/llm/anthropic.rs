@@ -383,8 +383,6 @@ impl LlmProvider for AnthropicProvider {
             }
         }
 
-        let _ = tx.send(StreamEvent::Done);
-
         // Build content blocks from accumulated data
         let mut content_blocks = vec![];
         if !accumulated_text.is_empty() {
