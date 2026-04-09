@@ -621,13 +621,14 @@ async fn main() -> Result<()> {
                                 llm::StreamEvent::ToolCallStart { name, .. } => {
                                     if first_text {
                                         spin_handle.stop();
-                                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                                        // Brief sleep to let spinner thread clear its line
+                                        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
                                         eprint!("\r\x1b[K");
                                         let _ = std::io::Write::flush(&mut std::io::stderr());
                                         first_text = false;
                                     }
                                     eprintln!(
-                                        "{}  ↳ calling {}{name}{}",
+                                        "\r\x1b[K{}  ↳ calling {}{name}{}",
                                         theme::MUTED,
                                         theme::TOOL_LABEL,
                                         theme::RESET
