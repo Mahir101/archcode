@@ -3,8 +3,8 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 
-use crate::event::Event;
 use super::manager::{Tool, ToolDefinition, ToolResult};
+use crate::event::Event;
 
 pub struct WebSearchTool;
 
@@ -24,7 +24,11 @@ impl Tool for WebSearchTool {
         }
     }
 
-    async fn execute(&self, args: Value, _events: Option<mpsc::Sender<Event>>) -> Result<ToolResult> {
+    async fn execute(
+        &self,
+        args: Value,
+        _events: Option<mpsc::Sender<Event>>,
+    ) -> Result<ToolResult> {
         let query = match args["query"].as_str() {
             Some(q) => q.to_string(),
             None => return Ok(ToolResult::err("Missing 'query'")),
@@ -40,7 +44,10 @@ impl Tool for WebSearchTool {
             .user_agent("archcode/0.1 (search)")
             .build()?;
 
-        let resp = client.get(&url).send().await
+        let resp = client
+            .get(&url)
+            .send()
+            .await
             .map_err(|e| anyhow::anyhow!("Search request failed: {e}"))?;
 
         let body = resp.text().await?;

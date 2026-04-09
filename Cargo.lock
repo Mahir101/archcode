@@ -83,6 +83,38 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
+name = "archcode"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "clap",
+ "crossterm 0.28.1",
+ "dotenvy",
+ "eventsource-stream",
+ "futures-util",
+ "glob",
+ "petgraph",
+ "ratatui",
+ "regex",
+ "reqwest",
+ "rust-embed",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "termimad",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "walkdir",
+]
+
+[[package]]
 name = "async-trait"
 version = "0.1.89"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1428,38 +1460,6 @@ name = "r-efi"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
-
-[[package]]
-name = "archcode"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "chrono",
- "clap",
- "crossterm 0.28.1",
- "dotenvy",
- "eventsource-stream",
- "futures-util",
- "glob",
- "petgraph",
- "ratatui",
- "regex",
- "reqwest",
- "rust-embed",
- "serde",
- "serde_json",
- "tempfile",
- "termimad",
- "thiserror",
- "tokio",
- "tokio-stream",
- "toml",
- "tracing",
- "tracing-subscriber",
- "uuid",
- "walkdir",
-]
 
 [[package]]
 name = "ratatui"

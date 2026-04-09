@@ -4,8 +4,8 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use super::provider::{
-    CompletionParams, CompletionResponse, ContentBlock, FinishReason,
-    LlmProvider, Message, ProviderConfig, Role, ToolCall,
+    CompletionParams, CompletionResponse, ContentBlock, FinishReason, LlmProvider, Message,
+    ProviderConfig, Role, ToolCall,
 };
 
 pub struct OpenAIProvider {
@@ -46,14 +46,17 @@ impl OpenAIProvider {
                 // Attach tool_calls array for assistant messages with tool calls
                 let tcs = m.tool_calls();
                 if !tcs.is_empty() {
-                    obj["tool_calls"] = json!(tcs.iter().map(|tc| json!({
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {
-                            "name": tc.name,
-                            "arguments": tc.arguments,
-                        }
-                    })).collect::<Vec<_>>());
+                    obj["tool_calls"] = json!(tcs
+                        .iter()
+                        .map(|tc| json!({
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {
+                                "name": tc.name,
+                                "arguments": tc.arguments,
+                            }
+                        }))
+                        .collect::<Vec<_>>());
                 }
                 obj
             })
@@ -135,8 +138,15 @@ impl LlmProvider for OpenAIProvider {
             for tc in tcs {
                 let id = tc["id"].as_str().unwrap_or("").to_string();
                 let name = tc["function"]["name"].as_str().unwrap_or("").to_string();
-                let arguments = tc["function"]["arguments"].as_str().unwrap_or("{}").to_string();
-                content_blocks.push(ContentBlock::tool_call(ToolCall { id, name, arguments }));
+                let arguments = tc["function"]["arguments"]
+                    .as_str()
+                    .unwrap_or("{}")
+                    .to_string();
+                content_blocks.push(ContentBlock::tool_call(ToolCall {
+                    id,
+                    name,
+                    arguments,
+                }));
             }
         }
 
@@ -150,10 +160,8 @@ impl LlmProvider for OpenAIProvider {
                         let extracted = extract_text_tool_calls(text);
                         if !extracted.is_empty() {
                             // Replace text content with parsed tool calls
-                            content_blocks = extracted
-                                .into_iter()
-                                .map(ContentBlock::tool_call)
-                                .collect();
+                            content_blocks =
+                                extracted.into_iter().map(ContentBlock::tool_call).collect();
                             finish_reason = FinishReason::ToolCalls;
                         }
                     }
@@ -167,7 +175,10 @@ impl LlmProvider for OpenAIProvider {
             tool_call_id: None,
         };
 
-        Ok(CompletionResponse { message, finish_reason })
+        Ok(CompletionResponse {
+            message,
+            finish_reason,
+        })
     }
 
     fn model(&self) -> &str {
@@ -261,13 +272,17 @@ fn find_json_object(text: &str) -> Option<&str> {
 fn parse_tool_call_json(s: &str) -> Option<ToolCall> {
     let v: Value = serde_json::from_str(s).ok()?;
     let name = v["name"].as_str().or_else(|| v["function"].as_str())?;
-    let arguments = v.get("arguments")
+    let arguments = v
+        .get("arguments")
         .or_else(|| v.get("parameters"))
         .or_else(|| v.get("args"))
         .map(|a| a.to_string())
         .unwrap_or_else(|| "{}".to_string());
     Some(ToolCall {
-        id: format!("local_{}", Uuid::new_v4().to_string().split('-').next().unwrap_or("x")),
+        id: format!(
+            "local_{}",
+            Uuid::new_v4().to_string().split('-').next().unwrap_or("x")
+        ),
         name: name.to_string(),
         arguments,
     })

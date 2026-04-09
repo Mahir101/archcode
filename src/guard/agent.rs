@@ -1,9 +1,9 @@
-use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
+use std::sync::Arc;
 
-use crate::llm::{LlmProvider, CompletionParams, FinishReason, Message};
 use super::manager::{Decision, EvalContext, LlmValidator, Verdict};
+use crate::llm::{CompletionParams, FinishReason, LlmProvider, Message};
 
 pub struct GuardAgent {
     provider: Arc<dyn LlmProvider + Send + Sync>,
@@ -18,7 +18,11 @@ impl GuardAgent {
         max_turns: usize,
     ) -> Self {
         let max_turns = if max_turns == 0 { 5 } else { max_turns };
-        Self { provider, model, max_turns }
+        Self {
+            provider,
+            model,
+            max_turns,
+        }
     }
 }
 
@@ -43,19 +47,19 @@ impl LlmValidator for GuardAgent {
             truncate(&ctx.input, 2000)
         );
 
-        let mut messages = vec![
-            Message::system(&system),
-            Message::user(&user),
-        ];
+        let mut messages = vec![Message::system(&system), Message::user(&user)];
 
         for _ in 0..self.max_turns {
-            let resp = self.provider.complete(CompletionParams {
-                model: self.model.clone(),
-                messages: messages.clone(),
-                tools: vec![],
-                max_tokens: Some(256),
-                temperature: Some(0.0),
-            }).await?;
+            let resp = self
+                .provider
+                .complete(CompletionParams {
+                    model: self.model.clone(),
+                    messages: messages.clone(),
+                    tools: vec![],
+                    max_tokens: Some(256),
+                    temperature: Some(0.0),
+                })
+                .await?;
 
             messages.push(resp.message.clone());
 
@@ -78,10 +82,20 @@ fn parse_verdict(text: &str) -> Decision {
     if upper.starts_with("ALLOW") {
         Decision::allow(text)
     } else if upper.starts_with("DENY") {
-        let reason = text.splitn(2, ':').nth(1).unwrap_or(text).trim().to_string();
+        let reason = text
+            .splitn(2, ':')
+            .nth(1)
+            .unwrap_or(text)
+            .trim()
+            .to_string();
         Decision::deny(reason)
     } else if upper.starts_with("ASK") {
-        let reason = text.splitn(2, ':').nth(1).unwrap_or(text).trim().to_string();
+        let reason = text
+            .splitn(2, ':')
+            .nth(1)
+            .unwrap_or(text)
+            .trim()
+            .to_string();
         Decision::ask(reason)
     } else {
         Decision::ask(format!("Unclear guard response: {text}"))

@@ -1,4 +1,5 @@
 mod agent;
+mod config;
 mod event;
 mod guard;
 mod kg;
@@ -7,11 +8,10 @@ mod refactor;
 mod reminder;
 mod skills;
 mod tools;
-mod config;
 
-use std::sync::Arc;
 use anyhow::Result;
 use clap::Parser;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 
 use agent::Agent;
@@ -19,13 +19,16 @@ use event::Event;
 use guard::{
     DangerousCommandRule, DefaultPolicyRule, GuardManager, SensitiveFileRule, WorkingDirRule,
 };
-use kg::{KGManager, KGIndexTool, KGQueryTool, KGSearchTool, KGBlastTool, KGRiskTool, KGRelateTool, KGLintTool, LintStore};
+use kg::{
+    KGBlastTool, KGIndexTool, KGLintTool, KGManager, KGQueryTool, KGRelateTool, KGRiskTool,
+    KGSearchTool, LintStore,
+};
 use llm::{config_from_env, new_provider};
-use reminder::{ReminderManager, Reminder, ScheduleKind, ConversationState};
+use refactor::{build_refactor_tools, RefactorContext, REFACTOR_SYSTEM_SNIPPET};
+use reminder::{ConversationState, Reminder, ReminderManager, ScheduleKind};
 use skills::SkillManager;
-use refactor::{RefactorContext, build_refactor_tools, REFACTOR_SYSTEM_SNIPPET};
 use tools::{
-    BashTool, EditTool, GlobTool, ReadTool, ToolManager, TodoReadTool, TodoStore, TodoWriteTool,
+    BashTool, EditTool, GlobTool, ReadTool, TodoReadTool, TodoStore, TodoWriteTool, ToolManager,
     WebSearchTool, WriteTool,
 };
 
@@ -34,7 +37,11 @@ use tools::{
 // ---------------------------------------------------------------------------
 
 #[derive(Parser, Debug)]
-#[command(name = "archcode", version, about = "archcode — agentic AI coding assistant by Mahir101")]
+#[command(
+    name = "archcode",
+    version,
+    about = "archcode — agentic AI coding assistant by Mahir101"
+)]
 struct Cli {
     /// Single-shot prompt (non-interactive)
     #[arg(short, long)]
@@ -64,8 +71,12 @@ fn build_tool_manager(cwd: &str) -> (Arc<ToolManager>, TodoStore) {
     mgr.register(WebSearchTool);
 
     let store = TodoStore::new();
-    mgr.register(TodoReadTool { store: store.clone() });
-    mgr.register(TodoWriteTool { store: store.clone() });
+    mgr.register(TodoReadTool {
+        store: store.clone(),
+    });
+    mgr.register(TodoWriteTool {
+        store: store.clone(),
+    });
 
     // Always register refactor tools — available by default, no user opt-in needed.
     let refactor_ctx = RefactorContext::new(cwd);
@@ -82,7 +93,10 @@ fn build_tool_manager(cwd: &str) -> (Arc<ToolManager>, TodoStore) {
     mgr.register(KGBlastTool { kg: kg.clone() });
     mgr.register(KGRiskTool { kg: kg.clone() });
     mgr.register(KGRelateTool { kg: kg.clone() });
-    mgr.register(KGLintTool { kg: kg.clone(), lint_store: lint_store });
+    mgr.register(KGLintTool {
+        kg: kg.clone(),
+        lint_store: lint_store,
+    });
 
     (Arc::new(mgr), store)
 }
@@ -97,11 +111,7 @@ fn build_guard_manager(no_guard: bool) -> Arc<GuardManager> {
     if !no_guard {
         if let Ok(cfg) = config_from_env() {
             if let Ok(provider) = new_provider(cfg.clone()) {
-                let agent = guard::GuardAgent::new(
-                    Arc::from(provider),
-                    cfg.model,
-                    5,
-                );
+                let agent = guard::GuardAgent::new(Arc::from(provider), cfg.model, 5);
                 mgr.set_llm_validator(agent);
             }
         }
@@ -137,7 +147,11 @@ fn build_reminder_manager(skill_mgr: &SkillManager) -> ReminderManager {
 }
 
 fn build_system_prompt(cwd: &str, refactor_mode: bool) -> String {
-    let refactor_section = if refactor_mode { REFACTOR_SYSTEM_SNIPPET } else { "" };
+    let refactor_section = if refactor_mode {
+        REFACTOR_SYSTEM_SNIPPET
+    } else {
+        ""
+    };
     format!(
         "You are archcode, an expert agentic AI coding assistant created by Mahir101.\n\
          You are running in: {cwd}\n\n\
@@ -219,12 +233,10 @@ async fn main() -> Result<()> {
                 None => break,
                 Some(ref s) if s.trim() == "/quit" || s.trim() == "/exit" => break,
                 Some(ref line) if line.trim().is_empty() => continue,
-                Some(line) => {
-                    match agent.run(&line).await {
-                        Ok(resp) => println!("\n{resp}\n"),
-                        Err(e) => eprintln!("Error: {e}"),
-                    }
-                }
+                Some(line) => match agent.run(&line).await {
+                    Ok(resp) => println!("\n{resp}\n"),
+                    Err(e) => eprintln!("Error: {e}"),
+                },
             }
         }
     }

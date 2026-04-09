@@ -3,8 +3,8 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 
-use crate::event::Event;
 use super::manager::{Tool, ToolDefinition, ToolResult};
+use crate::event::Event;
 
 pub struct GlobTool;
 
@@ -25,7 +25,11 @@ impl Tool for GlobTool {
         }
     }
 
-    async fn execute(&self, args: Value, _events: Option<mpsc::Sender<Event>>) -> Result<ToolResult> {
+    async fn execute(
+        &self,
+        args: Value,
+        _events: Option<mpsc::Sender<Event>>,
+    ) -> Result<ToolResult> {
         let pattern = match args["pattern"].as_str() {
             Some(p) => p.to_string(),
             None => return Ok(ToolResult::err("Missing 'pattern'")),
@@ -34,10 +38,12 @@ impl Tool for GlobTool {
         let base = args["cwd"]
             .as_str()
             .map(|s| s.to_string())
-            .unwrap_or_else(|| std::env::current_dir()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string());
+            .unwrap_or_else(|| {
+                std::env::current_dir()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string()
+            });
 
         let full_pattern = if pattern.starts_with('/') {
             pattern.clone()

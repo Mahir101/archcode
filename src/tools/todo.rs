@@ -1,12 +1,12 @@
-use std::sync::{Arc, Mutex};
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
-use crate::event::Event;
 use super::manager::{Tool, ToolDefinition, ToolResult};
+use crate::event::Event;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TodoItem {
@@ -66,7 +66,11 @@ impl Tool for TodoReadTool {
         }
     }
 
-    async fn execute(&self, _args: Value, _events: Option<mpsc::Sender<Event>>) -> Result<ToolResult> {
+    async fn execute(
+        &self,
+        _args: Value,
+        _events: Option<mpsc::Sender<Event>>,
+    ) -> Result<ToolResult> {
         let items = self.store.read();
         if items.is_empty() {
             return Ok(ToolResult::ok("No todos."));
@@ -111,7 +115,11 @@ impl Tool for TodoWriteTool {
         }
     }
 
-    async fn execute(&self, args: Value, _events: Option<mpsc::Sender<Event>>) -> Result<ToolResult> {
+    async fn execute(
+        &self,
+        args: Value,
+        _events: Option<mpsc::Sender<Event>>,
+    ) -> Result<ToolResult> {
         let raw = match args["todos"].as_array() {
             Some(a) => a.clone(),
             None => return Ok(ToolResult::err("Missing 'todos' array")),

@@ -1,6 +1,6 @@
+use anyhow::Result;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use anyhow::Result;
 
 #[derive(Debug, Clone)]
 pub struct Skill {

@@ -3,8 +3,8 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 
 use super::provider::{
-    CompletionParams, CompletionResponse, ContentBlock, FinishReason,
-    LlmProvider, Message, ProviderConfig, Role, ToolCall,
+    CompletionParams, CompletionResponse, ContentBlock, FinishReason, LlmProvider, Message,
+    ProviderConfig, Role, ToolCall,
 };
 
 pub struct AnthropicProvider {
@@ -59,8 +59,7 @@ impl LlmProvider for AnthropicProvider {
                         blocks.push(json!({ "type": "text", "text": m.text() }));
                     }
                     for tc in m.tool_calls() {
-                        let input: Value = serde_json::from_str(&tc.arguments)
-                            .unwrap_or(json!({}));
+                        let input: Value = serde_json::from_str(&tc.arguments).unwrap_or(json!({}));
                         blocks.push(json!({
                             "type": "tool_use",
                             "id": tc.id,
@@ -87,11 +86,13 @@ impl LlmProvider for AnthropicProvider {
         let tools_json: Vec<Value> = params
             .tools
             .iter()
-            .map(|t| json!({
-                "name": t.name,
-                "description": t.description,
-                "input_schema": t.parameters,
-            }))
+            .map(|t| {
+                json!({
+                    "name": t.name,
+                    "description": t.description,
+                    "input_schema": t.parameters,
+                })
+            })
             .collect();
 
         let mut body = json!({
@@ -148,7 +149,11 @@ impl LlmProvider for AnthropicProvider {
                         let id = block["id"].as_str().unwrap_or("").to_string();
                         let name = block["name"].as_str().unwrap_or("").to_string();
                         let arguments = block["input"].to_string();
-                        content_blocks.push(ContentBlock::tool_call(ToolCall { id, name, arguments }));
+                        content_blocks.push(ContentBlock::tool_call(ToolCall {
+                            id,
+                            name,
+                            arguments,
+                        }));
                     }
                     _ => {}
                 }
@@ -161,7 +166,10 @@ impl LlmProvider for AnthropicProvider {
             tool_call_id: None,
         };
 
-        Ok(CompletionResponse { message, finish_reason })
+        Ok(CompletionResponse {
+            message,
+            finish_reason,
+        })
     }
 
     fn model(&self) -> &str {

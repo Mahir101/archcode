@@ -1,6 +1,6 @@
-use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 
 use crate::event::Event;
@@ -20,13 +20,22 @@ pub struct Decision {
 
 impl Decision {
     pub fn allow(reason: impl Into<String>) -> Self {
-        Self { verdict: Verdict::Allow, reason: reason.into() }
+        Self {
+            verdict: Verdict::Allow,
+            reason: reason.into(),
+        }
     }
     pub fn deny(reason: impl Into<String>) -> Self {
-        Self { verdict: Verdict::Deny, reason: reason.into() }
+        Self {
+            verdict: Verdict::Deny,
+            reason: reason.into(),
+        }
     }
     pub fn ask(reason: impl Into<String>) -> Self {
-        Self { verdict: Verdict::Ask, reason: reason.into() }
+        Self {
+            verdict: Verdict::Ask,
+            reason: reason.into(),
+        }
     }
 }
 
@@ -56,7 +65,10 @@ pub struct GuardManager {
 
 impl GuardManager {
     pub fn new() -> Self {
-        Self { rules: vec![], llm_validator: None }
+        Self {
+            rules: vec![],
+            llm_validator: None,
+        }
     }
 
     pub fn add_rule(&mut self, rule: impl GuardRule + 'static) {

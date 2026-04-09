@@ -1,14 +1,16 @@
-use std::path::PathBuf;
-use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
+use std::path::PathBuf;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 
+use super::detector::{
+    resolve_command, run_command, RefactorConfig, RefactorResult, StackDetector,
+};
 use crate::event::Event;
-use crate::tools::{ToolDefinition, ToolResult};
 use crate::tools::manager::Tool;
-use super::detector::{RefactorConfig, RefactorResult, StackDetector, resolve_command, run_command};
+use crate::tools::{ToolDefinition, ToolResult};
 
 // ---------------------------------------------------------------------------
 // Shared context
@@ -72,7 +74,11 @@ impl Tool for RunTestsTool {
         }
     }
 
-    async fn execute(&self, _args: Value, _events: Option<mpsc::Sender<Event>>) -> Result<ToolResult> {
+    async fn execute(
+        &self,
+        _args: Value,
+        _events: Option<mpsc::Sender<Event>>,
+    ) -> Result<ToolResult> {
         let cmd = match resolve_command(
             self.ctx.config.run_tests.as_deref(),
             self.ctx.detector.detect_tests(),
@@ -100,7 +106,8 @@ impl Tool for RunLintTool {
         ToolDefinition {
             name: "refactor.run_lint".into(),
             description: "Run the project linter. Returns structured JSON with lint results. \
-                          Uses .archcode/refactor.json override, then auto-detects.".into(),
+                          Uses .archcode/refactor.json override, then auto-detects."
+                .into(),
             parameters: json!({
                 "type": "object",
                 "properties": {},
@@ -109,7 +116,11 @@ impl Tool for RunLintTool {
         }
     }
 
-    async fn execute(&self, _args: Value, _events: Option<mpsc::Sender<Event>>) -> Result<ToolResult> {
+    async fn execute(
+        &self,
+        _args: Value,
+        _events: Option<mpsc::Sender<Event>>,
+    ) -> Result<ToolResult> {
         let cmd = match resolve_command(
             self.ctx.config.run_lint.as_deref(),
             self.ctx.detector.detect_lint(),
@@ -137,7 +148,8 @@ impl Tool for RunFormatTool {
         ToolDefinition {
             name: "refactor.run_format".into(),
             description: "Run the project code formatter. Returns structured JSON. \
-                          Uses .archcode/refactor.json override, then auto-detects.".into(),
+                          Uses .archcode/refactor.json override, then auto-detects."
+                .into(),
             parameters: json!({
                 "type": "object",
                 "properties": {},
@@ -146,7 +158,11 @@ impl Tool for RunFormatTool {
         }
     }
 
-    async fn execute(&self, _args: Value, _events: Option<mpsc::Sender<Event>>) -> Result<ToolResult> {
+    async fn execute(
+        &self,
+        _args: Value,
+        _events: Option<mpsc::Sender<Event>>,
+    ) -> Result<ToolResult> {
         let cmd = match resolve_command(
             self.ctx.config.run_format.as_deref(),
             self.ctx.detector.detect_format(),
@@ -173,9 +189,11 @@ impl Tool for RunSemgrepTool {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "refactor.run_semgrep".into(),
-            description: "Run Semgrep with the built-in SOLID smell rules. Returns structured JSON. \
+            description:
+                "Run Semgrep with the built-in SOLID smell rules. Returns structured JSON. \
                           Skips gracefully if semgrep is not installed. \
-                          Uses .archcode/refactor.json override to customize rules.".into(),
+                          Uses .archcode/refactor.json override to customize rules."
+                    .into(),
             parameters: json!({
                 "type": "object",
                 "properties": {},
@@ -184,7 +202,11 @@ impl Tool for RunSemgrepTool {
         }
     }
 
-    async fn execute(&self, _args: Value, _events: Option<mpsc::Sender<Event>>) -> Result<ToolResult> {
+    async fn execute(
+        &self,
+        _args: Value,
+        _events: Option<mpsc::Sender<Event>>,
+    ) -> Result<ToolResult> {
         let cmd = match resolve_command(
             self.ctx.config.run_semgrep.as_deref(),
             self.ctx.detector.detect_semgrep(),
@@ -218,7 +240,8 @@ impl Tool for GitDiffTool {
         ToolDefinition {
             name: "refactor.git_diff".into(),
             description: "Show the current git diff (staged + unstaged changes). \
-                          Use after refactoring to review what changed before committing.".into(),
+                          Use after refactoring to review what changed before committing."
+                .into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -232,7 +255,11 @@ impl Tool for GitDiffTool {
         }
     }
 
-    async fn execute(&self, args: Value, _events: Option<mpsc::Sender<Event>>) -> Result<ToolResult> {
+    async fn execute(
+        &self,
+        args: Value,
+        _events: Option<mpsc::Sender<Event>>,
+    ) -> Result<ToolResult> {
         let staged = args["staged"].as_bool().unwrap_or(false);
         let cmd = if staged {
             "git diff --cached --stat && git diff --cached".to_string()
@@ -268,8 +295,10 @@ impl Tool for BaselineTool {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "refactor.baseline".into(),
-            description: "Run ALL quality checks (tests, lint, format, semgrep) and return a combined \
-                          baseline report. Call this BEFORE and AFTER any refactoring session.".into(),
+            description:
+                "Run ALL quality checks (tests, lint, format, semgrep) and return a combined \
+                          baseline report. Call this BEFORE and AFTER any refactoring session."
+                    .into(),
             parameters: json!({
                 "type": "object",
                 "properties": {},
@@ -278,14 +307,19 @@ impl Tool for BaselineTool {
         }
     }
 
-    async fn execute(&self, _args: Value, _events: Option<mpsc::Sender<Event>>) -> Result<ToolResult> {
+    async fn execute(
+        &self,
+        _args: Value,
+        _events: Option<mpsc::Sender<Event>>,
+    ) -> Result<ToolResult> {
         let tests = run_or_skip(
             self.ctx.config.run_tests.as_deref(),
             self.ctx.detector.detect_tests(),
             "run_tests",
             &self.ctx.root,
             self.ctx.timeout_secs,
-        ).await;
+        )
+        .await;
 
         let lint = run_or_skip(
             self.ctx.config.run_lint.as_deref(),
@@ -293,7 +327,8 @@ impl Tool for BaselineTool {
             "run_lint",
             &self.ctx.root,
             self.ctx.timeout_secs,
-        ).await;
+        )
+        .await;
 
         let format = run_or_skip(
             self.ctx.config.run_format.as_deref(),
@@ -301,7 +336,8 @@ impl Tool for BaselineTool {
             "run_format",
             &self.ctx.root,
             self.ctx.timeout_secs,
-        ).await;
+        )
+        .await;
 
         let semgrep = run_or_skip(
             self.ctx.config.run_semgrep.as_deref(),
@@ -309,7 +345,8 @@ impl Tool for BaselineTool {
             "run_semgrep",
             &self.ctx.root,
             self.ctx.timeout_secs,
-        ).await;
+        )
+        .await;
 
         let overall_ok = (tests.ok || tests.skipped)
             && (lint.ok || lint.skipped)

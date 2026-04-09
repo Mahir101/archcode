@@ -3,8 +3,8 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 
-use crate::event::Event;
 use super::manager::{Tool, ToolDefinition, ToolResult};
+use crate::event::Event;
 
 pub struct BashTool;
 
@@ -13,7 +13,8 @@ impl Tool for BashTool {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "Bash".into(),
-            description: "Execute a shell command and return stdout/stderr. Use with caution.".into(),
+            description: "Execute a shell command and return stdout/stderr. Use with caution."
+                .into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -25,7 +26,11 @@ impl Tool for BashTool {
         }
     }
 
-    async fn execute(&self, args: Value, events: Option<mpsc::Sender<Event>>) -> Result<ToolResult> {
+    async fn execute(
+        &self,
+        args: Value,
+        events: Option<mpsc::Sender<Event>>,
+    ) -> Result<ToolResult> {
         let command = match args["command"].as_str() {
             Some(c) => c.to_string(),
             None => return Ok(ToolResult::err("Missing 'command'")),
@@ -34,7 +39,9 @@ impl Tool for BashTool {
         let timeout_secs = args["timeout_secs"].as_u64().unwrap_or(30);
 
         if let Some(ch) = &events {
-            let _ = ch.send(Event::tool("Bash", format!("$ {}", truncate(&command, 80)))).await;
+            let _ = ch
+                .send(Event::tool("Bash", format!("$ {}", truncate(&command, 80))))
+                .await;
         }
 
         let output = tokio::time::timeout(
@@ -69,7 +76,10 @@ impl Tool for BashTool {
         }
 
         let is_error = !output.status.success();
-        Ok(ToolResult { content: result, is_error })
+        Ok(ToolResult {
+            content: result,
+            is_error,
+        })
     }
 }
 

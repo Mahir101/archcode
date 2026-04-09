@@ -1,15 +1,15 @@
 //! Agent-facing KG tools: KGQuery, KGRelate, KGBlast, KGRisk, KGLint, KGIndex.
 
-use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::{json, Value};
+use std::sync::Arc;
 use tokio::sync::mpsc;
 
+use super::lint::{run_linters, LintStore};
+use super::manager::KGManager;
 use crate::event::Event;
 use crate::tools::manager::{Tool, ToolDefinition, ToolResult};
-use super::manager::KGManager;
-use super::lint::{run_linters, LintStore};
 
 // ---------------------------------------------------------------------------
 // KGIndex — index a file or directory
@@ -35,7 +35,11 @@ impl Tool for KGIndexTool {
         }
     }
 
-    async fn execute(&self, args: Value, events: Option<mpsc::Sender<Event>>) -> Result<ToolResult> {
+    async fn execute(
+        &self,
+        args: Value,
+        events: Option<mpsc::Sender<Event>>,
+    ) -> Result<ToolResult> {
         let path = match args["path"].as_str() {
             Some(p) => p.to_string(),
             None => return Ok(ToolResult::err("Missing 'path'")),
@@ -57,9 +61,13 @@ impl Tool for KGIndexTool {
                     kg.index_file(&path_clone);
                 }
             }
-        }).await?;
+        })
+        .await?;
 
-        Ok(ToolResult::ok(format!("Indexed {path}. {}", self.kg.stats())))
+        Ok(ToolResult::ok(format!(
+            "Indexed {path}. {}",
+            self.kg.stats()
+        )))
     }
 }
 
@@ -87,7 +95,11 @@ impl Tool for KGQueryTool {
         }
     }
 
-    async fn execute(&self, args: Value, _events: Option<mpsc::Sender<Event>>) -> Result<ToolResult> {
+    async fn execute(
+        &self,
+        args: Value,
+        _events: Option<mpsc::Sender<Event>>,
+    ) -> Result<ToolResult> {
         let key = match args["key"].as_str() {
             Some(k) => k.to_string(),
             None => return Ok(ToolResult::err("Missing 'key'")),
@@ -98,17 +110,28 @@ impl Tool for KGQueryTool {
             // Try search
             let search = self.kg.search(&key);
             if search.is_empty() {
-                return Ok(ToolResult::ok(format!("No results for '{key}' in KG. Use KGIndex first.")));
+                return Ok(ToolResult::ok(format!(
+                    "No results for '{key}' in KG. Use KGIndex first."
+                )));
             }
-            let out = search.iter()
+            let out = search
+                .iter()
                 .map(|r| format!("[{}] {}", r.kind, r.key))
                 .collect::<Vec<_>>()
                 .join("\n");
-            return Ok(ToolResult::ok(format!("Search results for '{key}':\n{out}")));
+            return Ok(ToolResult::ok(format!(
+                "Search results for '{key}':\n{out}"
+            )));
         }
 
-        let out = results.iter()
-            .map(|r| format!("  --[{}(w={:.2})]--> [{}] {}", r.edge, r.weight, r.target_kind, r.target))
+        let out = results
+            .iter()
+            .map(|r| {
+                format!(
+                    "  --[{}(w={:.2})]--> [{}] {}",
+                    r.edge, r.weight, r.target_kind, r.target
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n");
 
@@ -140,7 +163,11 @@ impl Tool for KGSearchTool {
         }
     }
 
-    async fn execute(&self, args: Value, _events: Option<mpsc::Sender<Event>>) -> Result<ToolResult> {
+    async fn execute(
+        &self,
+        args: Value,
+        _events: Option<mpsc::Sender<Event>>,
+    ) -> Result<ToolResult> {
         let query = match args["query"].as_str() {
             Some(q) => q.to_string(),
             None => return Ok(ToolResult::err("Missing 'query'")),
@@ -150,12 +177,16 @@ impl Tool for KGSearchTool {
         if results.is_empty() {
             return Ok(ToolResult::ok(format!("No matches for '{query}'")));
         }
-        let out = results.iter()
+        let out = results
+            .iter()
             .take(50)
             .map(|r| format!("[{}] {}", r.kind, r.key))
             .collect::<Vec<_>>()
             .join("\n");
-        Ok(ToolResult::ok(format!("{} results for '{query}':\n{out}", results.len())))
+        Ok(ToolResult::ok(format!(
+            "{} results for '{query}':\n{out}",
+            results.len()
+        )))
     }
 }
 
@@ -183,7 +214,11 @@ impl Tool for KGBlastTool {
         }
     }
 
-    async fn execute(&self, args: Value, _events: Option<mpsc::Sender<Event>>) -> Result<ToolResult> {
+    async fn execute(
+        &self,
+        args: Value,
+        _events: Option<mpsc::Sender<Event>>,
+    ) -> Result<ToolResult> {
         let key = match args["key"].as_str() {
             Some(k) => k.to_string(),
             None => return Ok(ToolResult::err("Missing 'key'")),
@@ -191,10 +226,13 @@ impl Tool for KGBlastTool {
 
         let blast = self.kg.blast_radius(&key);
         if blast.is_empty() {
-            return Ok(ToolResult::ok(format!("No downstream impact found for '{key}'. Index the codebase first with KGIndex.")));
+            return Ok(ToolResult::ok(format!(
+                "No downstream impact found for '{key}'. Index the codebase first with KGIndex."
+            )));
         }
 
-        let out = blast.iter()
+        let out = blast
+            .iter()
             .map(|n| format!("  depth={} [{}] {}", n.depth, n.kind, n.key))
             .collect::<Vec<_>>()
             .join("\n");
@@ -229,7 +267,11 @@ impl Tool for KGRiskTool {
         }
     }
 
-    async fn execute(&self, args: Value, _events: Option<mpsc::Sender<Event>>) -> Result<ToolResult> {
+    async fn execute(
+        &self,
+        args: Value,
+        _events: Option<mpsc::Sender<Event>>,
+    ) -> Result<ToolResult> {
         let top = args["top"].as_u64().unwrap_or(20) as usize;
         let scores = self.kg.risk_scores();
 
@@ -237,16 +279,21 @@ impl Tool for KGRiskTool {
             return Ok(ToolResult::ok("No function data in KG. Run KGIndex first."));
         }
 
-        let out = scores.iter()
+        let out = scores
+            .iter()
             .take(top)
-            .map(|r| format!(
-                "  score={:.1} complexity={} fan_in={} → {}",
-                r.score, r.complexity, r.fan_in, r.name
-            ))
+            .map(|r| {
+                format!(
+                    "  score={:.1} complexity={} fan_in={} → {}",
+                    r.score, r.complexity, r.fan_in, r.name
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n");
 
-        Ok(ToolResult::ok(format!("Top {top} highest-risk functions:\n{out}")))
+        Ok(ToolResult::ok(format!(
+            "Top {top} highest-risk functions:\n{out}"
+        )))
     }
 }
 
@@ -263,7 +310,9 @@ impl Tool for KGRelateTool {
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: "KGRelate".into(),
-            description: "Record a custom relation between two symbols or files in the Knowledge Graph.".into(),
+            description:
+                "Record a custom relation between two symbols or files in the Knowledge Graph."
+                    .into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -276,12 +325,22 @@ impl Tool for KGRelateTool {
         }
     }
 
-    async fn execute(&self, args: Value, _events: Option<mpsc::Sender<Event>>) -> Result<ToolResult> {
-        let from = match args["from"].as_str() { Some(s) => s.to_string(), None => return Ok(ToolResult::err("Missing 'from'")) };
-        let to = match args["to"].as_str() { Some(s) => s.to_string(), None => return Ok(ToolResult::err("Missing 'to'")) };
+    async fn execute(
+        &self,
+        args: Value,
+        _events: Option<mpsc::Sender<Event>>,
+    ) -> Result<ToolResult> {
+        let from = match args["from"].as_str() {
+            Some(s) => s.to_string(),
+            None => return Ok(ToolResult::err("Missing 'from'")),
+        };
+        let to = match args["to"].as_str() {
+            Some(s) => s.to_string(),
+            None => return Ok(ToolResult::err("Missing 'to'")),
+        };
         let kind = args["kind"].as_str().unwrap_or("related");
 
-        use super::graph::{EdgeKind, KGNode, FileDef, Language};
+        use super::graph::{EdgeKind, FileDef, KGNode, Language};
 
         let edge_kind = match kind {
             "imports" => EdgeKind::Imports,
@@ -292,19 +351,36 @@ impl Tool for KGRelateTool {
             _ => EdgeKind::Related,
         };
 
-        let from_ni = self.kg.get_or_create(&from, KGNode::File(FileDef {
-            path: from.clone(), language: Language::Unknown("manual".into()),
-            size_bytes: 0, line_count: 0, churn: 0, mtime: 0,
-        }));
-        let to_ni = self.kg.get_or_create(&to, KGNode::File(FileDef {
-            path: to.clone(), language: Language::Unknown("manual".into()),
-            size_bytes: 0, line_count: 0, churn: 0, mtime: 0,
-        }));
+        let from_ni = self.kg.get_or_create(
+            &from,
+            KGNode::File(FileDef {
+                path: from.clone(),
+                language: Language::Unknown("manual".into()),
+                size_bytes: 0,
+                line_count: 0,
+                churn: 0,
+                mtime: 0,
+            }),
+        );
+        let to_ni = self.kg.get_or_create(
+            &to,
+            KGNode::File(FileDef {
+                path: to.clone(),
+                language: Language::Unknown("manual".into()),
+                size_bytes: 0,
+                line_count: 0,
+                churn: 0,
+                mtime: 0,
+            }),
+        );
 
         use super::graph::KGEdge;
-        self.kg.add_edge_once(from_ni, to_ni, KGEdge::new(edge_kind));
+        self.kg
+            .add_edge_once(from_ni, to_ni, KGEdge::new(edge_kind));
 
-        Ok(ToolResult::ok(format!("Recorded: {from} --[{kind}]--> {to}")))
+        Ok(ToolResult::ok(format!(
+            "Recorded: {from} --[{kind}]--> {to}"
+        )))
     }
 }
 
@@ -333,28 +409,43 @@ impl Tool for KGLintTool {
         }
     }
 
-    async fn execute(&self, args: Value, events: Option<mpsc::Sender<Event>>) -> Result<ToolResult> {
-        let cwd = args["cwd"].as_str()
+    async fn execute(
+        &self,
+        args: Value,
+        events: Option<mpsc::Sender<Event>>,
+    ) -> Result<ToolResult> {
+        let cwd = args["cwd"]
+            .as_str()
             .map(|s| s.to_string())
-            .unwrap_or_else(|| std::env::current_dir()
-                .unwrap_or_default().to_string_lossy().to_string());
+            .unwrap_or_else(|| {
+                std::env::current_dir()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string()
+            });
 
         let filter_file = args["file"].as_str().map(|s| s.to_string());
 
         if let Some(ch) = &events {
-            let _ = ch.send(Event::kg(format!("Running linters in {cwd}"))).await;
+            let _ = ch
+                .send(Event::kg(format!("Running linters in {cwd}")))
+                .await;
         }
 
         use super::graph::Language;
         let all_langs = vec![
-            Language::Rust, Language::Go, Language::Python,
-            Language::TypeScript, Language::Java, Language::CSharp, Language::Cpp,
+            Language::Rust,
+            Language::Go,
+            Language::Python,
+            Language::TypeScript,
+            Language::Java,
+            Language::CSharp,
+            Language::Cpp,
         ];
 
         let cwd_clone = cwd.clone();
-        let diags = tokio::task::spawn_blocking(move || {
-            run_linters(&cwd_clone, &all_langs)
-        }).await?;
+        let diags =
+            tokio::task::spawn_blocking(move || run_linters(&cwd_clone, &all_langs)).await?;
 
         let mut store = self.lint_store.lock().unwrap();
         store.ingest(diags);
@@ -364,10 +455,18 @@ impl Tool for KGLintTool {
         if let Some(ref file) = filter_file {
             let file_diags = store.for_file(file);
             if file_diags.is_empty() {
-                return Ok(ToolResult::ok(format!("No lint issues for {file}. {summary}")));
+                return Ok(ToolResult::ok(format!(
+                    "No lint issues for {file}. {summary}"
+                )));
             }
-            let out = file_diags.iter()
-                .map(|d| format!("  {}:{} [{}] {} ({})", d.line, d.col, d.severity, d.message, d.code))
+            let out = file_diags
+                .iter()
+                .map(|d| {
+                    format!(
+                        "  {}:{} [{}] {} ({})",
+                        d.line, d.col, d.severity, d.message, d.code
+                    )
+                })
                 .collect::<Vec<_>>()
                 .join("\n");
             return Ok(ToolResult::ok(format!("{file}:\n{out}\n\n{summary}")));
@@ -380,7 +479,10 @@ impl Tool for KGLintTool {
             let diags = store.for_file(file);
             out_parts.push(format!("\n{file}:"));
             for d in diags.iter().take(5) {
-                out_parts.push(format!("  {}:{} [{}] {}", d.line, d.col, d.severity, d.message));
+                out_parts.push(format!(
+                    "  {}:{} [{}] {}",
+                    d.line, d.col, d.severity, d.message
+                ));
             }
             if diags.len() > 5 {
                 out_parts.push(format!("  ... and {} more", diags.len() - 5));

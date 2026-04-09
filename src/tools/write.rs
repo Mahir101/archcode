@@ -3,8 +3,8 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 
-use crate::event::Event;
 use super::manager::{Tool, ToolDefinition, ToolResult};
+use crate::event::Event;
 
 pub struct WriteTool;
 
@@ -25,7 +25,11 @@ impl Tool for WriteTool {
         }
     }
 
-    async fn execute(&self, args: Value, _events: Option<mpsc::Sender<Event>>) -> Result<ToolResult> {
+    async fn execute(
+        &self,
+        args: Value,
+        _events: Option<mpsc::Sender<Event>>,
+    ) -> Result<ToolResult> {
         let path = match args["path"].as_str() {
             Some(p) => p.to_string(),
             None => return Ok(ToolResult::err("Missing 'path' argument")),
@@ -41,9 +45,13 @@ impl Tool for WriteTool {
             }
         }
 
-        tokio::fs::write(&path, &content).await
+        tokio::fs::write(&path, &content)
+            .await
             .map_err(|e| anyhow::anyhow!("Write failed: {e}"))?;
 
-        Ok(ToolResult::ok(format!("Written {} bytes to {path}", content.len())))
+        Ok(ToolResult::ok(format!(
+            "Written {} bytes to {path}",
+            content.len()
+        )))
     }
 }

@@ -12,7 +12,7 @@ use super::graph::{ClassDef, ClassKind, FunctionDef, Language, TypeDef};
 
 #[derive(Debug, Default)]
 pub struct ParsedSymbols {
-    pub imports: Vec<String>,    // module paths imported by this file
+    pub imports: Vec<String>, // module paths imported by this file
     pub functions: Vec<FunctionDef>,
     pub classes: Vec<ClassDef>,
     pub types: Vec<TypeDef>,
@@ -49,7 +49,9 @@ pub fn parse_file(path: &str, source: &str) -> ParsedSymbols {
 fn cyclomatic(body: &str) -> usize {
     // Count decision points: if, else if, for, while, match arm (=>), case, &&, ||, ?
     let mut n = 1usize;
-    for kw in ["if ", "else if", " for ", " while ", " => ", "case ", " && ", " || ", "?;"] {
+    for kw in [
+        "if ", "else if", " for ", " while ", " => ", "case ", " && ", " || ", "?;",
+    ] {
         n += body.matches(kw).count();
     }
     n
@@ -69,13 +71,15 @@ fn parse_rust(src: &str) -> ParsedSymbols {
     // use statements
     let use_re = Regex::new(r"(?m)^use\s+([\w::{}, \n]+);").unwrap();
     for cap in use_re.captures_iter(src) {
-        out.imports.push(cap[1].split_whitespace().collect::<String>());
+        out.imports
+            .push(cap[1].split_whitespace().collect::<String>());
     }
 
     // fn definitions
     let fn_re = Regex::new(
         r"(?m)^(\s*)(pub(?:\s*\([^)]*\))?\s+)?(?:async\s+)?fn\s+(\w+)\s*(<[^>]*>)?\s*(\([^)]*\))",
-    ).unwrap();
+    )
+    .unwrap();
     for cap in fn_re.captures_iter(src) {
         let is_pub = cap.get(2).is_some();
         let is_async = cap[0].contains("async");
@@ -99,7 +103,8 @@ fn parse_rust(src: &str) -> ParsedSymbols {
     }
 
     // struct / enum / trait
-    let type_re = Regex::new(r"(?m)^(pub(?:\s*\([^)]*\))?\s+)?(struct|enum|trait|type)\s+(\w+)").unwrap();
+    let type_re =
+        Regex::new(r"(?m)^(pub(?:\s*\([^)]*\))?\s+)?(struct|enum|trait|type)\s+(\w+)").unwrap();
     for cap in type_re.captures_iter(src) {
         let is_pub = cap.get(1).is_some();
         let kind_str = &cap[2];
@@ -153,7 +158,11 @@ fn parse_go(src: &str) -> ParsedSymbols {
         let name = cap[1].to_string();
         let sig = cap[0].to_string();
         let line = line_of(src, cap.get(0).unwrap().start());
-        let is_pub = name.chars().next().map(|c| c.is_uppercase()).unwrap_or(false);
+        let is_pub = name
+            .chars()
+            .next()
+            .map(|c| c.is_uppercase())
+            .unwrap_or(false);
         let complexity = cyclomatic(&src[cap.get(0).unwrap().end()..]);
         out.functions.push(FunctionDef {
             name,
@@ -168,7 +177,8 @@ fn parse_go(src: &str) -> ParsedSymbols {
         });
     }
 
-    let type_re = Regex::new(r"(?m)^type\s+(\w+)\s+(struct|interface|func|string|int|\w+)").unwrap();
+    let type_re =
+        Regex::new(r"(?m)^type\s+(\w+)\s+(struct|interface|func|string|int|\w+)").unwrap();
     for cap in type_re.captures_iter(src) {
         let name = cap[1].to_string();
         let kind = match &cap[2] {
@@ -228,11 +238,21 @@ fn parse_python(src: &str) -> ParsedSymbols {
     let class_re = Regex::new(r"(?m)^class\s+(\w+)\s*(?:\(([^)]*)\))?:").unwrap();
     for cap in class_re.captures_iter(src) {
         let name = cap[1].to_string();
-        let bases: Vec<String> = cap.get(2)
-            .map(|m| m.as_str().split(',').map(|s| s.trim().to_string()).collect())
+        let bases: Vec<String> = cap
+            .get(2)
+            .map(|m| {
+                m.as_str()
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .collect()
+            })
             .unwrap_or_default();
         let superclass = bases.first().cloned();
-        let interfaces = if bases.len() > 1 { bases[1..].to_vec() } else { vec![] };
+        let interfaces = if bases.len() > 1 {
+            bases[1..].to_vec()
+        } else {
+            vec![]
+        };
         let line = line_of(src, cap.get(0).unwrap().start());
         out.classes.push(ClassDef {
             name,
@@ -255,7 +275,8 @@ fn parse_python(src: &str) -> ParsedSymbols {
 fn parse_ts_js(src: &str) -> ParsedSymbols {
     let mut out = ParsedSymbols::default();
 
-    let import_re = Regex::new(r#"(?m)(?:import|require)\s*(?:\(['" ]|from\s+['"])([^'")\s]+)"#).unwrap();
+    let import_re =
+        Regex::new(r#"(?m)(?:import|require)\s*(?:\(['" ]|from\s+['"])([^'")\s]+)"#).unwrap();
     for cap in import_re.captures_iter(src) {
         out.imports.push(cap[1].to_string());
     }
@@ -265,10 +286,14 @@ fn parse_ts_js(src: &str) -> ParsedSymbols {
         r"(?m)(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(|(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?\(",
     ).unwrap();
     for cap in fn_re.captures_iter(src) {
-        let name = cap.get(1).or_else(|| cap.get(2))
+        let name = cap
+            .get(1)
+            .or_else(|| cap.get(2))
             .map(|m| m.as_str().to_string())
             .unwrap_or_default();
-        if name.is_empty() { continue; }
+        if name.is_empty() {
+            continue;
+        }
         let is_async = cap[0].contains("async");
         let is_pub = cap[0].contains("export");
         let line = line_of(src, cap.get(0).unwrap().start());
@@ -292,8 +317,14 @@ fn parse_ts_js(src: &str) -> ParsedSymbols {
     for cap in class_re.captures_iter(src) {
         let name = cap[1].to_string();
         let superclass = cap.get(2).map(|m| m.as_str().to_string());
-        let interfaces: Vec<String> = cap.get(3)
-            .map(|m| m.as_str().split(',').map(|s| s.trim().to_string()).collect())
+        let interfaces: Vec<String> = cap
+            .get(3)
+            .map(|m| {
+                m.as_str()
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .collect()
+            })
             .unwrap_or_default();
         let line = line_of(src, cap.get(0).unwrap().start());
         let is_pub = cap[0].contains("export");
@@ -309,11 +340,18 @@ fn parse_ts_js(src: &str) -> ParsedSymbols {
     }
 
     // interface
-    let iface_re = Regex::new(r"(?m)(?:export\s+)?interface\s+(\w+)(?:\s+extends\s+([\w,\s]+))?").unwrap();
+    let iface_re =
+        Regex::new(r"(?m)(?:export\s+)?interface\s+(\w+)(?:\s+extends\s+([\w,\s]+))?").unwrap();
     for cap in iface_re.captures_iter(src) {
         let name = cap[1].to_string();
-        let interfaces: Vec<String> = cap.get(2)
-            .map(|m| m.as_str().split(',').map(|s| s.trim().to_string()).collect())
+        let interfaces: Vec<String> = cap
+            .get(2)
+            .map(|m| {
+                m.as_str()
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .collect()
+            })
             .unwrap_or_default();
         let line = line_of(src, cap.get(0).unwrap().start());
         out.classes.push(ClassDef {
@@ -348,8 +386,14 @@ fn parse_java(src: &str) -> ParsedSymbols {
     for cap in class_re.captures_iter(src) {
         let name = cap[1].to_string();
         let superclass = cap.get(2).map(|m| m.as_str().trim().to_string());
-        let interfaces: Vec<String> = cap.get(3)
-            .map(|m| m.as_str().split(',').map(|s| s.trim().to_string()).collect())
+        let interfaces: Vec<String> = cap
+            .get(3)
+            .map(|m| {
+                m.as_str()
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .collect()
+            })
             .unwrap_or_default();
         let line = line_of(src, cap.get(0).unwrap().start());
         out.classes.push(ClassDef {
@@ -368,7 +412,9 @@ fn parse_java(src: &str) -> ParsedSymbols {
     ).unwrap();
     for cap in fn_re.captures_iter(src) {
         let name = cap[1].to_string();
-        if name == "if" || name == "for" || name == "while" || name == "switch" { continue; }
+        if name == "if" || name == "for" || name == "while" || name == "switch" {
+            continue;
+        }
         let line = line_of(src, cap.get(0).unwrap().start());
         let is_pub = cap[0].contains("public");
         let complexity = cyclomatic(&src[cap.get(0).unwrap().end()..]);
@@ -405,11 +451,21 @@ fn parse_csharp(src: &str) -> ParsedSymbols {
     ).unwrap();
     for cap in class_re.captures_iter(src) {
         let name = cap[1].to_string();
-        let bases: Vec<String> = cap.get(2)
-            .map(|m| m.as_str().split(',').map(|s| s.trim().to_string()).collect())
+        let bases: Vec<String> = cap
+            .get(2)
+            .map(|m| {
+                m.as_str()
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .collect()
+            })
             .unwrap_or_default();
         let superclass = bases.first().cloned();
-        let interfaces = if bases.len() > 1 { bases[1..].to_vec() } else { vec![] };
+        let interfaces = if bases.len() > 1 {
+            bases[1..].to_vec()
+        } else {
+            vec![]
+        };
         let line = line_of(src, cap.get(0).unwrap().start());
         out.classes.push(ClassDef {
             name,
@@ -427,7 +483,9 @@ fn parse_csharp(src: &str) -> ParsedSymbols {
     ).unwrap();
     for cap in fn_re.captures_iter(src) {
         let name = cap[1].to_string();
-        if matches!(name.as_str(), "if" | "while" | "for" | "foreach" | "switch") { continue; }
+        if matches!(name.as_str(), "if" | "while" | "for" | "foreach" | "switch") {
+            continue;
+        }
         let is_async = cap[0].contains("async");
         let line = line_of(src, cap.get(0).unwrap().start());
         let complexity = cyclomatic(&src[cap.get(0).unwrap().end()..]);
@@ -459,7 +517,10 @@ fn parse_cpp(src: &str) -> ParsedSymbols {
         out.imports.push(cap[1].to_string());
     }
 
-    let class_re = Regex::new(r"(?m)(?:class|struct)\s+(\w+)(?:\s*:\s*(?:public|private|protected)?\s*([\w:, ]+))?\s*\{").unwrap();
+    let class_re = Regex::new(
+        r"(?m)(?:class|struct)\s+(\w+)(?:\s*:\s*(?:public|private|protected)?\s*([\w:, ]+))?\s*\{",
+    )
+    .unwrap();
     for cap in class_re.captures_iter(src) {
         let name = cap[1].to_string();
         let superclass = cap.get(2).map(|m| m.as_str().trim().to_string());
@@ -476,10 +537,13 @@ fn parse_cpp(src: &str) -> ParsedSymbols {
     }
 
     // Simple function pattern: return_type name(params) {
-    let fn_re = Regex::new(r"(?m)^(?:[\w:*&<> ]+\s+)+(\w+)\s*\([^;{]*\)\s*(?:const\s*)?\{").unwrap();
+    let fn_re =
+        Regex::new(r"(?m)^(?:[\w:*&<> ]+\s+)+(\w+)\s*\([^;{]*\)\s*(?:const\s*)?\{").unwrap();
     for cap in fn_re.captures_iter(src) {
         let name = cap[1].to_string();
-        if matches!(name.as_str(), "if" | "while" | "for" | "switch" | "else") { continue; }
+        if matches!(name.as_str(), "if" | "while" | "for" | "switch" | "else") {
+            continue;
+        }
         let line = line_of(src, cap.get(0).unwrap().start());
         let complexity = cyclomatic(&src[cap.get(0).unwrap().end()..]);
         out.functions.push(FunctionDef {

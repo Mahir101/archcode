@@ -1,6 +1,6 @@
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use serde::{Deserialize, Serialize};
 
 /// The output shape returned by every refactor tool.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -15,7 +15,11 @@ pub struct RefactorResult {
 }
 
 impl RefactorResult {
-    pub fn ok(command: impl Into<String>, stdout: impl Into<String>, stderr: impl Into<String>) -> Self {
+    pub fn ok(
+        command: impl Into<String>,
+        stdout: impl Into<String>,
+        stderr: impl Into<String>,
+    ) -> Self {
         Self {
             ok: true,
             exit_code: 0,
@@ -27,7 +31,12 @@ impl RefactorResult {
         }
     }
 
-    pub fn fail(command: impl Into<String>, exit_code: i32, stdout: impl Into<String>, stderr: impl Into<String>) -> Self {
+    pub fn fail(
+        command: impl Into<String>,
+        exit_code: i32,
+        stdout: impl Into<String>,
+        stderr: impl Into<String>,
+    ) -> Self {
         Self {
             ok: false,
             exit_code,
@@ -89,7 +98,8 @@ impl StackDetector {
     }
 
     fn has_glob(&self, pattern: &str) -> bool {
-        glob::glob(&self.root.join(pattern).to_string_lossy()).ok()
+        glob::glob(&self.root.join(pattern).to_string_lossy())
+            .ok()
             .and_then(|mut it| it.next())
             .is_some()
     }
@@ -108,7 +118,8 @@ impl StackDetector {
                 }
             }
             Some("npm test".into())
-        } else if self.has("pyproject.toml") || self.has("requirements.txt") || self.has("setup.py") {
+        } else if self.has("pyproject.toml") || self.has("requirements.txt") || self.has("setup.py")
+        {
             Some("pytest -q".into())
         } else if self.has("pom.xml") {
             Some("mvn test -q".into())

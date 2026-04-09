@@ -2,7 +2,7 @@ pub mod detector;
 pub mod tools;
 
 pub use detector::{RefactorConfig, RefactorResult, StackDetector};
-pub use tools::{RefactorContext, build_refactor_tools};
+pub use tools::{build_refactor_tools, RefactorContext};
 
 /// The refactoring mode system-prompt snippet to inject when `--refactor` is active.
 pub const REFACTOR_SYSTEM_SNIPPET: &str = r#"

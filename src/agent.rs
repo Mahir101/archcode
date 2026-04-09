@@ -1,12 +1,14 @@
-use std::sync::Arc;
 use anyhow::Result;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 
 use crate::event::Event;
 use crate::guard::{EvalContext, GuardManager, Verdict};
-use crate::llm::{CompletionParams, CompletionResponse, FinishReason, LlmProvider, Message, ToolDef};
+use crate::llm::{
+    CompletionParams, CompletionResponse, FinishReason, LlmProvider, Message, ToolDef,
+};
 use crate::reminder::{ConversationState, ReminderManager};
-use crate::tools::{ToolManager};
+use crate::tools::ToolManager;
 
 const MAX_TURNS: usize = 200;
 
@@ -77,13 +79,16 @@ impl Agent {
             .collect();
 
         for _turn in 0..MAX_TURNS {
-            let resp = self.provider.complete(CompletionParams {
-                model: self.model.clone(),
-                messages: self.messages.clone(),
-                tools: tool_defs.clone(),
-                max_tokens: None,
-                temperature: None,
-            }).await?;
+            let resp = self
+                .provider
+                .complete(CompletionParams {
+                    model: self.model.clone(),
+                    messages: self.messages.clone(),
+                    tools: tool_defs.clone(),
+                    max_tokens: None,
+                    temperature: None,
+                })
+                .await?;
 
             self.messages.push(resp.message.clone());
 
@@ -94,8 +99,8 @@ impl Agent {
                 FinishReason::ToolCalls => {
                     for tc in resp.message.tool_calls() {
                         let tc = tc.clone();
-                        let args: serde_json::Value = serde_json::from_str(&tc.arguments)
-                            .unwrap_or(serde_json::json!({}));
+                        let args: serde_json::Value =
+                            serde_json::from_str(&tc.arguments).unwrap_or(serde_json::json!({}));
 
                         // Guard evaluation
                         let eval_ctx = EvalContext {
@@ -108,34 +113,47 @@ impl Agent {
                         let decision = self.guard_manager.evaluate(&eval_ctx).await;
                         match decision.verdict {
                             Verdict::Deny => {
-                                let _ = self.events_tx.send(
-                                    Event::guard(&tc.name, format!("DENIED: {}", decision.reason), true)
-                                ).await;
+                                let _ = self
+                                    .events_tx
+                                    .send(Event::guard(
+                                        &tc.name,
+                                        format!("DENIED: {}", decision.reason),
+                                        true,
+                                    ))
+                                    .await;
                                 self.messages.push(Message {
                                     role: crate::llm::Role::Tool,
-                                    content: vec![crate::llm::ContentBlock::text(
-                                        format!("Tool call denied by guard: {}", decision.reason)
-                                    )],
+                                    content: vec![crate::llm::ContentBlock::text(format!(
+                                        "Tool call denied by guard: {}",
+                                        decision.reason
+                                    ))],
                                     tool_call_id: Some(tc.id.clone()),
                                 });
                                 continue;
                             }
                             Verdict::Ask => {
                                 // For now auto-ask becomes a deny in non-interactive mode
-                                let _ = self.events_tx.send(
-                                    Event::guard(&tc.name, format!("ASK: {}", decision.reason), false)
-                                ).await;
+                                let _ = self
+                                    .events_tx
+                                    .send(Event::guard(
+                                        &tc.name,
+                                        format!("ASK: {}", decision.reason),
+                                        false,
+                                    ))
+                                    .await;
                                 // In interactive mode this would prompt user; here we allow
                             }
                             Verdict::Allow => {}
                         }
 
                         // Execute tool
-                        let _ = self.events_tx.send(
-                            Event::tool(&tc.name, format!("Calling {}", tc.name))
-                        ).await;
+                        let _ = self
+                            .events_tx
+                            .send(Event::tool(&tc.name, format!("Calling {}", tc.name)))
+                            .await;
 
-                        let result = self.tool_manager
+                        let result = self
+                            .tool_manager
                             .execute(&tc.name, args, Some(self.events_tx.clone()))
                             .await;
 
@@ -150,8 +168,6 @@ impl Agent {
             }
         }
 
-        Ok(self.messages.last()
-            .map(|m| m.text())
-            .unwrap_or_default())
+        Ok(self.messages.last().map(|m| m.text()).unwrap_or_default())
     }
 }

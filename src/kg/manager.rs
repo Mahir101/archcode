@@ -137,44 +137,62 @@ impl KGManager {
             self.add_edge_once(file_ni, cls_ni, KGEdge::new(EdgeKind::Contains));
 
             if let Some(ref sup) = class.superclass {
-                let sup_ni = self.get_or_create(sup, KGNode::Class(super::graph::ClassDef {
-                    name: sup.clone(),
-                    kind: super::graph::ClassKind::Class,
-                    superclass: None,
-                    interfaces: vec![],
-                    line_start: 0,
-                    line_end: 0,
-                    is_public: true,
-                }));
+                let sup_ni = self.get_or_create(
+                    sup,
+                    KGNode::Class(super::graph::ClassDef {
+                        name: sup.clone(),
+                        kind: super::graph::ClassKind::Class,
+                        superclass: None,
+                        interfaces: vec![],
+                        line_start: 0,
+                        line_end: 0,
+                        is_public: true,
+                    }),
+                );
                 self.add_edge_once(cls_ni, sup_ni, KGEdge::new(EdgeKind::Extends));
             }
 
             for iface in &class.interfaces {
-                let iface_ni = self.get_or_create(iface, KGNode::Class(super::graph::ClassDef {
-                    name: iface.clone(),
-                    kind: super::graph::ClassKind::Interface,
-                    superclass: None,
-                    interfaces: vec![],
-                    line_start: 0,
-                    line_end: 0,
-                    is_public: true,
-                }));
+                let iface_ni = self.get_or_create(
+                    iface,
+                    KGNode::Class(super::graph::ClassDef {
+                        name: iface.clone(),
+                        kind: super::graph::ClassKind::Interface,
+                        superclass: None,
+                        interfaces: vec![],
+                        line_start: 0,
+                        line_end: 0,
+                        is_public: true,
+                    }),
+                );
                 self.add_edge_once(cls_ni, iface_ni, KGEdge::new(EdgeKind::Implements));
             }
         }
 
         // FFI edge detection
         for (from_key, to_key, ffi_kind) in detect_ffi(path, &content) {
-            let from_ni = self.get_or_create(&from_key, KGNode::File(FileDef {
-                path: from_key.clone(),
-                language: Language::Unknown("ffi".into()),
-                size_bytes: 0, line_count: 0, churn: 0, mtime: 0,
-            }));
-            let to_ni = self.get_or_create(&to_key, KGNode::File(FileDef {
-                path: to_key.clone(),
-                language: Language::Unknown("ffi".into()),
-                size_bytes: 0, line_count: 0, churn: 0, mtime: 0,
-            }));
+            let from_ni = self.get_or_create(
+                &from_key,
+                KGNode::File(FileDef {
+                    path: from_key.clone(),
+                    language: Language::Unknown("ffi".into()),
+                    size_bytes: 0,
+                    line_count: 0,
+                    churn: 0,
+                    mtime: 0,
+                }),
+            );
+            let to_ni = self.get_or_create(
+                &to_key,
+                KGNode::File(FileDef {
+                    path: to_key.clone(),
+                    language: Language::Unknown("ffi".into()),
+                    size_bytes: 0,
+                    line_count: 0,
+                    churn: 0,
+                    mtime: 0,
+                }),
+            );
             self.add_edge_once(from_ni, to_ni, KGEdge::new(EdgeKind::FfiBridge(ffi_kind)));
         }
 
@@ -190,7 +208,11 @@ impl KGManager {
             .filter(|e| e.file_type().is_file())
         {
             let path = entry.path().to_string_lossy().to_string();
-            let ext = entry.path().extension().and_then(|e| e.to_str()).unwrap_or("");
+            let ext = entry
+                .path()
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("");
             if INDEXABLE_EXTS.contains(&ext) {
                 self.index_file(&path);
             }
@@ -253,23 +275,38 @@ impl KGManager {
 
         // Add edges where coupling >= 0.3
         for ((a, b), count) in &pair_count {
-            let max_commits = file_commit_count.get(a)
+            let max_commits = file_commit_count
+                .get(a)
                 .copied()
                 .unwrap_or(0)
                 .max(file_commit_count.get(b).copied().unwrap_or(0));
-            if max_commits == 0 { continue; }
+            if max_commits == 0 {
+                continue;
+            }
             let weight = *count as f32 / max_commits as f32;
             if weight >= 0.3 {
-                let a_ni = self.get_or_create(a, KGNode::File(FileDef {
-                    path: a.clone(),
-                    language: Language::Unknown("git".into()),
-                    size_bytes: 0, line_count: 0, churn: 0, mtime: 0,
-                }));
-                let b_ni = self.get_or_create(b, KGNode::File(FileDef {
-                    path: b.clone(),
-                    language: Language::Unknown("git".into()),
-                    size_bytes: 0, line_count: 0, churn: 0, mtime: 0,
-                }));
+                let a_ni = self.get_or_create(
+                    a,
+                    KGNode::File(FileDef {
+                        path: a.clone(),
+                        language: Language::Unknown("git".into()),
+                        size_bytes: 0,
+                        line_count: 0,
+                        churn: 0,
+                        mtime: 0,
+                    }),
+                );
+                let b_ni = self.get_or_create(
+                    b,
+                    KGNode::File(FileDef {
+                        path: b.clone(),
+                        language: Language::Unknown("git".into()),
+                        size_bytes: 0,
+                        line_count: 0,
+                        churn: 0,
+                        mtime: 0,
+                    }),
+                );
                 self.add_edge_once(a_ni, b_ni, KGEdge::with_weight(EdgeKind::CoChanges, weight));
             }
         }
@@ -333,14 +370,18 @@ impl KGManager {
         let mut results = vec![];
 
         while let Some((ni, depth)) = queue.pop_front() {
-            if depth == 0 { continue; } // skip start node itself
+            if depth == 0 {
+                continue;
+            } // skip start node itself
             let node = &graph[ni];
             results.push(BlastNode {
                 key: node.label(),
                 kind: node.kind_str().to_string(),
                 depth,
             });
-            if depth >= 5 { continue; } // max depth
+            if depth >= 5 {
+                continue;
+            } // max depth
             for edge in graph.edges(ni) {
                 let target = edge.target();
                 if !visited.contains(&target) {
@@ -365,7 +406,8 @@ impl KGManager {
             return vec![];
         };
 
-        graph.edges(ni)
+        graph
+            .edges(ni)
             .map(|e| QueryResult {
                 target: graph[e.target()].label(),
                 target_kind: graph[e.target()].kind_str().to_string(),
@@ -413,7 +455,11 @@ impl KGManager {
                 });
             }
         }
-        scores.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scores.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         scores
     }
 
@@ -430,7 +476,11 @@ impl KGManager {
         format!(
             "Files accessed this session ({}):\n{}",
             unique.len(),
-            unique.iter().map(|p| format!("  - {p}")).collect::<Vec<_>>().join("\n")
+            unique
+                .iter()
+                .map(|p| format!("  - {p}"))
+                .collect::<Vec<_>>()
+                .join("\n")
         )
     }
 
@@ -491,8 +541,14 @@ fn detect_ffi(path: &str, src: &str) -> Vec<(String, String, FfiKind)> {
     let mut edges = vec![];
 
     // PyO3: Rust crate that exposes to Python
-    if path.ends_with(".rs") && (src.contains("pyo3") || src.contains("#[pymodule]") || src.contains("#[pyfunction]")) {
-        edges.push((path.to_string(), "python:pyo3_binding".to_string(), FfiKind::PyO3));
+    if path.ends_with(".rs")
+        && (src.contains("pyo3") || src.contains("#[pymodule]") || src.contains("#[pyfunction]"))
+    {
+        edges.push((
+            path.to_string(),
+            "python:pyo3_binding".to_string(),
+            FfiKind::PyO3,
+        ));
     }
 
     // CGo: Go file with import "C"
@@ -502,23 +558,45 @@ fn detect_ffi(path: &str, src: &str) -> Vec<(String, String, FfiKind)> {
 
     // JNI: Java/Kotlin native method
     if (path.ends_with(".java") || path.ends_with(".kt")) && src.contains("native ") {
-        edges.push((path.to_string(), "cpp:jni_binding".to_string(), FfiKind::Jni));
+        edges.push((
+            path.to_string(),
+            "cpp:jni_binding".to_string(),
+            FfiKind::Jni,
+        ));
     }
 
     // NAPI: Node.js native addon
     if (path.ends_with(".cc") || path.ends_with(".cpp")) && src.contains("napi") {
-        edges.push((path.to_string(), "js:napi_binding".to_string(), FfiKind::Napi));
+        edges.push((
+            path.to_string(),
+            "js:napi_binding".to_string(),
+            FfiKind::Napi,
+        ));
     }
 
     // WASM target
     if path.ends_with(".rs") && (src.contains("wasm_bindgen") || src.contains("#[wasm_bindgen]")) {
-        edges.push((path.to_string(), "js:wasm_binding".to_string(), FfiKind::Wasm));
+        edges.push((
+            path.to_string(),
+            "js:wasm_binding".to_string(),
+            FfiKind::Wasm,
+        ));
     }
 
     // subprocess calls
-    for subprocess_marker in ["subprocess.run", "subprocess.call", "exec.Command", "child_process", "ProcessBuilder"] {
+    for subprocess_marker in [
+        "subprocess.run",
+        "subprocess.call",
+        "exec.Command",
+        "child_process",
+        "ProcessBuilder",
+    ] {
         if src.contains(subprocess_marker) {
-            edges.push((path.to_string(), "subprocess:shell".to_string(), FfiKind::ChildProcess));
+            edges.push((
+                path.to_string(),
+                "subprocess:shell".to_string(),
+                FfiKind::ChildProcess,
+            ));
             break;
         }
     }
@@ -527,6 +605,6 @@ fn detect_ffi(path: &str, src: &str) -> Vec<(String, String, FfiKind)> {
 }
 
 const INDEXABLE_EXTS: &[&str] = &[
-    "rs", "go", "py", "ts", "tsx", "js", "jsx", "mjs",
-    "java", "cs", "cpp", "cxx", "cc", "c", "h", "hpp",
+    "rs", "go", "py", "ts", "tsx", "js", "jsx", "mjs", "java", "cs", "cpp", "cxx", "cc", "c", "h",
+    "hpp",
 ];

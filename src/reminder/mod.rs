@@ -62,7 +62,10 @@ impl Reminder {
                 let last = *self.last_turn.lock().unwrap();
                 state.turn > 0 && (state.turn - last) >= *interval
             }
-            ScheduleKind::Condition { max_fires, condition } => {
+            ScheduleKind::Condition {
+                max_fires,
+                condition,
+            } => {
                 let fires = *self.fires.lock().unwrap();
                 fires < *max_fires && condition(state)
             }
@@ -112,7 +115,10 @@ impl ReminderManager {
         if parts.is_empty() {
             return None;
         }
-        Some(format!("<system-reminder>\n{}\n</system-reminder>", parts.join("\n\n")))
+        Some(format!(
+            "<system-reminder>\n{}\n</system-reminder>",
+            parts.join("\n\n")
+        ))
     }
 }
 

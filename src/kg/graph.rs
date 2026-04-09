@@ -179,11 +179,11 @@ pub enum EdgeKind {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum FfiKind {
-    PyO3,   // Rust ↔ Python
-    CGo,    // Go ↔ C
-    Jni,    // Java ↔ C++
-    Wasm,   // Any → Wasm module
-    Napi,   // Node.js ↔ Rust/C++
+    PyO3,         // Rust ↔ Python
+    CGo,          // Go ↔ C
+    Jni,          // Java ↔ C++
+    Wasm,         // Any → Wasm module
+    Napi,         // Node.js ↔ Rust/C++
     ChildProcess, // any language calls another via subprocess
 }
 

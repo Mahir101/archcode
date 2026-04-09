@@ -15,7 +15,7 @@ const DANGEROUS_PATTERNS: &[&str] = &[
     r"chmod\s+-R\s+777\s+/",
     r"curl\s+.*\|\s*bash",
     r"wget\s+.*\|\s*sh",
-    r":(){ :|:& };:",   // fork bomb
+    r":(){ :|:& };:", // fork bomb
     r"sudo\s+rm\s+-rf",
 ];
 

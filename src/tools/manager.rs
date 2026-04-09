@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::Value;
+use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 
 use crate::event::Event;
@@ -15,10 +15,16 @@ pub struct ToolResult {
 
 impl ToolResult {
     pub fn ok(content: impl Into<String>) -> Self {
-        Self { content: content.into(), is_error: false }
+        Self {
+            content: content.into(),
+            is_error: false,
+        }
     }
     pub fn err(content: impl Into<String>) -> Self {
-        Self { content: content.into(), is_error: true }
+        Self {
+            content: content.into(),
+            is_error: true,
+        }
     }
 }
 
@@ -32,11 +38,8 @@ pub struct ToolDefinition {
 #[async_trait]
 pub trait Tool: Send + Sync {
     fn definition(&self) -> ToolDefinition;
-    async fn execute(
-        &self,
-        args: Value,
-        events: Option<mpsc::Sender<Event>>,
-    ) -> Result<ToolResult>;
+    async fn execute(&self, args: Value, events: Option<mpsc::Sender<Event>>)
+        -> Result<ToolResult>;
 }
 
 pub struct ToolManager {
@@ -45,7 +48,9 @@ pub struct ToolManager {
 
 impl ToolManager {
     pub fn new() -> Self {
-        Self { tools: HashMap::new() }
+        Self {
+            tools: HashMap::new(),
+        }
     }
 
     pub fn register(&mut self, tool: impl Tool + 'static) {
