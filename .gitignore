@@ -1,1 +1,7 @@
 /target
+ .DS_STORE
+ .idea
+ .vscode
+ .settings
+ .project
+ .qodo

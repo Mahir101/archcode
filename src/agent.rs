@@ -87,12 +87,6 @@ impl Agent {
 
             self.messages.push(resp.message.clone());
 
-            // Stream text to UI
-            let text = resp.message.text();
-            if !text.is_empty() {
-                let _ = self.events_tx.send(Event::tool("Assistant", &text)).await;
-            }
-
             match resp.finish_reason {
                 FinishReason::Stop => {
                     return Ok(resp.message.text());
