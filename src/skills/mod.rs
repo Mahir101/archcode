@@ -18,7 +18,10 @@ pub struct SkillManager {
 
 impl SkillManager {
     pub fn new() -> Self {
-        Self { skills: vec![], lookup: HashMap::new() }
+        Self {
+            skills: vec![],
+            lookup: HashMap::new(),
+        }
     }
 
     /// Load skills from standard directories: .bitcode/, .claude/, .agents/

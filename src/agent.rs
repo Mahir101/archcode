@@ -162,7 +162,10 @@ impl Agent {
                         if result.is_error {
                             let _ = self
                                 .events_tx
-                                .send(Event::tool(&tc.name, format!("Tool error: {}", result.content)))
+                                .send(Event::tool(
+                                    &tc.name,
+                                    format!("Tool error: {}", result.content),
+                                ))
                                 .await;
                         }
 

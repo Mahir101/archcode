@@ -19,15 +19,18 @@ use config::discover_instruction_files;
 use agent::Agent;
 use event::Event;
 use guard::{
-    DangerousCommandRule, DefaultPolicyRule, Decision, GuardManager, GuardRule,
-    SensitiveFileRule, WorkingDirRule,
+    DangerousCommandRule, Decision, DefaultPolicyRule, GuardManager, GuardRule, SensitiveFileRule,
+    WorkingDirRule,
 };
 use kg::{
     KGBlastTool, KGIndexTool, KGLintTool, KGManager, KGQueryTool, KGRelateTool, KGRiskTool,
     KGSearchTool, LintStore,
 };
 use llm::{config_from_env, new_provider};
-use refactor::{build_refactor_tools, RefactorConfig, RefactorContext, RefactorResult, StackDetector, REFACTOR_SYSTEM_SNIPPET};
+use refactor::{
+    build_refactor_tools, RefactorConfig, RefactorContext, RefactorResult, StackDetector,
+    REFACTOR_SYSTEM_SNIPPET,
+};
 use reminder::{ConversationState, Reminder, ReminderManager, ScheduleKind};
 use skills::SkillManager;
 use tools::{
@@ -116,10 +119,8 @@ fn build_guard_manager(no_guard: bool) -> Arc<GuardManager> {
     mgr.add_rule(DangerousCommandRule);
     mgr.add_rule(WorkingDirRule);
 
-    let extra_rules: Vec<Box<dyn GuardRule>> = vec![
-        Box::new(SensitiveFileRule),
-        Box::new(DefaultPolicyRule),
-    ];
+    let extra_rules: Vec<Box<dyn GuardRule>> =
+        vec![Box::new(SensitiveFileRule), Box::new(DefaultPolicyRule)];
     for rule in extra_rules {
         mgr.add_rule_boxed(rule);
     }
@@ -143,22 +144,26 @@ fn build_guard_manager(no_guard: bool) -> Arc<GuardManager> {
 fn build_reminder_manager(skill_mgr: &SkillManager) -> ReminderManager {
     let mut mgr = ReminderManager::new();
 
-    let skill_names: Vec<String> = skill_mgr.list().iter().map(|s| {
-        // Use all skill fields for the reminder description
-        let mut label = s.name.clone();
-        if !s.description.is_empty() {
-            label = format!("{label} — {}", s.description);
-        }
-        if !s.trigger.is_empty() {
-            label = format!("{label} [trigger: {}]", s.trigger);
-        }
-        if !s.source.is_empty() {
-            label = format!("{label} (from {})", s.source);
-        }
-        // s.prompt is available at runtime for injection
-        let _ = s.prompt.len();
-        label
-    }).collect();
+    let skill_names: Vec<String> = skill_mgr
+        .list()
+        .iter()
+        .map(|s| {
+            // Use all skill fields for the reminder description
+            let mut label = s.name.clone();
+            if !s.description.is_empty() {
+                label = format!("{label} — {}", s.description);
+            }
+            if !s.trigger.is_empty() {
+                label = format!("{label} [trigger: {}]", s.trigger);
+            }
+            if !s.source.is_empty() {
+                label = format!("{label} (from {})", s.source);
+            }
+            // s.prompt is available at runtime for injection
+            let _ = s.prompt.len();
+            label
+        })
+        .collect();
     if !skill_names.is_empty() {
         // Also exercise SkillManager::get() to validate the first skill is retrievable
         if let Some(first) = skill_mgr.list().first() {
@@ -260,13 +265,20 @@ async fn main() -> Result<()> {
                 event::PreviewType::KG => "\x1b[35m[KG]\x1b[0m",
                 event::PreviewType::Text => "\x1b[0m",
             };
-            let error_marker = if evt.is_error { " \x1b[31m(ERROR)\x1b[0m" } else { "" };
+            let error_marker = if evt.is_error {
+                " \x1b[31m(ERROR)\x1b[0m"
+            } else {
+                ""
+            };
             let extra = if evt.args.is_empty() {
                 String::new()
             } else {
                 format!(" [{}]", evt.args.join(", "))
             };
-            eprintln!("{prefix} {}:{extra} {}{error_marker}", evt.name, evt.message);
+            eprintln!(
+                "{prefix} {}:{extra} {}{error_marker}",
+                evt.name, evt.message
+            );
         }
     });
 
@@ -283,7 +295,9 @@ async fn main() -> Result<()> {
 
     if let Some(prompt) = cli.prompt {
         // Send startup event in single-shot mode
-        let _ = events_tx.send(Event::text(format!("archcode started with model: {model}"))).await;
+        let _ = events_tx
+            .send(Event::text(format!("archcode started with model: {model}")))
+            .await;
         // Single-shot mode
         let result = agent.run(&prompt).await?;
         println!("{result}");

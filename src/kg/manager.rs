@@ -501,13 +501,18 @@ impl KGManager {
         let mut lang_counts: HashMap<String, usize> = HashMap::new();
         for ni in graph.node_indices() {
             if let KGNode::File(ref f) = graph[ni] {
-                *lang_counts.entry(f.language.name().to_string()).or_default() += 1;
+                *lang_counts
+                    .entry(f.language.name().to_string())
+                    .or_default() += 1;
             }
         }
         let lang_info = if lang_counts.is_empty() {
             String::new()
         } else {
-            let parts: Vec<String> = lang_counts.iter().map(|(k, v)| format!("{k}:{v}")).collect();
+            let parts: Vec<String> = lang_counts
+                .iter()
+                .map(|(k, v)| format!("{k}:{v}"))
+                .collect();
             format!(", langs: {}", parts.join(", "))
         };
         format!(

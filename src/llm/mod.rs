@@ -5,8 +5,8 @@ pub mod provider;
 pub use anthropic::AnthropicProvider;
 pub use openai::OpenAIProvider;
 pub use provider::{
-    Backend, CompletionParams, CompletionResponse, ContentBlock, FinishReason,
-    LlmProvider, Message, ProviderConfig, Role, ToolCall, ToolCallResult, ToolDef,
+    Backend, CompletionParams, CompletionResponse, ContentBlock, FinishReason, LlmProvider,
+    Message, ProviderConfig, Role, ToolCall, ToolCallResult, ToolDef,
 };
 
 use anyhow::Result;

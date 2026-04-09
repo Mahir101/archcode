@@ -89,11 +89,13 @@ impl GuardManager {
             if let Some(d) = rule.evaluate(ctx).await {
                 // Send event via events_ch if available
                 if let Some(ch) = &ctx.events_ch {
-                    let _ = ch.send(Event::guard(
-                        &ctx.tool_name,
-                        format!("Rule decision: {}", d.reason),
-                        d.verdict == Verdict::Deny,
-                    )).await;
+                    let _ = ch
+                        .send(Event::guard(
+                            &ctx.tool_name,
+                            format!("Rule decision: {}", d.reason),
+                            d.verdict == Verdict::Deny,
+                        ))
+                        .await;
                 }
                 return d;
             }
