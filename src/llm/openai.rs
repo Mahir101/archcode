@@ -1,11 +1,13 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use eventsource_stream::Eventsource;
+use futures_util::StreamExt;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
 use super::provider::{
     CompletionParams, CompletionResponse, ContentBlock, FinishReason, LlmProvider, Message,
-    ProviderConfig, Role, TokenUsage, ToolCall,
+    ProviderConfig, Role, StreamEvent, StreamSender, TokenUsage, ToolCall,
 };
 
 pub struct OpenAIProvider {
@@ -190,6 +192,191 @@ impl LlmProvider for OpenAIProvider {
 
     fn model(&self) -> &str {
         &self.cfg.model
+    }
+
+    async fn stream_complete(
+        &self,
+        params: CompletionParams,
+        tx: StreamSender,
+    ) -> Result<CompletionResponse> {
+        let url = format!("{}/chat/completions", self.base_url());
+
+        let tools_json: Vec<Value> = params
+            .tools
+            .iter()
+            .map(|t| {
+                json!({
+                    "type": "function",
+                    "function": {
+                        "name": t.name,
+                        "description": t.description,
+                        "parameters": t.parameters,
+                    }
+                })
+            })
+            .collect();
+
+        let mut body = json!({
+            "model": params.model,
+            "messages": Self::messages_to_json(&params.messages),
+            "stream": true,
+        });
+
+        if !tools_json.is_empty() {
+            body["tools"] = json!(tools_json);
+            body["tool_choice"] = json!("auto");
+        }
+        if let Some(t) = params.temperature {
+            body["temperature"] = json!(t);
+        }
+        if let Some(mt) = params.max_tokens {
+            body["max_tokens"] = json!(mt);
+        }
+
+        let resp = self
+            .client
+            .post(&url)
+            .bearer_auth(&self.cfg.api_key)
+            .json(&body)
+            .send()
+            .await
+            .context("OpenAI streaming request failed")?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp.text().await?;
+            anyhow::bail!("OpenAI API error {status}: {text}");
+        }
+
+        // Parse SSE stream
+        let mut stream = resp.bytes_stream().eventsource();
+
+        let mut accumulated_text = String::new();
+        let mut finish_reason = FinishReason::Unknown;
+        let mut usage = TokenUsage::default();
+
+        // Tool call accumulators: index -> (id, name, arguments)
+        let mut tool_calls_acc: std::collections::HashMap<usize, (String, String, String)> =
+            std::collections::HashMap::new();
+
+        while let Some(event) = stream.next().await {
+            let event = match event {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            if event.data == "[DONE]" {
+                break;
+            }
+
+            let chunk: Value = match serde_json::from_str(&event.data) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+
+            // Parse finish_reason
+            if let Some(fr) = chunk["choices"][0]["finish_reason"].as_str() {
+                finish_reason = match fr {
+                    "stop" => FinishReason::Stop,
+                    "tool_calls" => FinishReason::ToolCalls,
+                    "length" => FinishReason::Length,
+                    _ => FinishReason::Unknown,
+                };
+            }
+
+            // Parse text delta
+            if let Some(text) = chunk["choices"][0]["delta"]["content"].as_str() {
+                if !text.is_empty() {
+                    accumulated_text.push_str(text);
+                    let _ = tx.send(StreamEvent::TextDelta(text.to_string()));
+                }
+            }
+
+            // Parse tool call deltas
+            if let Some(tcs) = chunk["choices"][0]["delta"]["tool_calls"].as_array() {
+                for tc in tcs {
+                    let index = tc["index"].as_u64().unwrap_or(0) as usize;
+                    let entry = tool_calls_acc
+                        .entry(index)
+                        .or_insert_with(|| (String::new(), String::new(), String::new()));
+
+                    if let Some(id) = tc["id"].as_str() {
+                        entry.0 = id.to_string();
+                    }
+                    if let Some(name) = tc["function"]["name"].as_str() {
+                        entry.1.push_str(name);
+                        let _ = tx.send(StreamEvent::ToolCallStart {
+                            id: entry.0.clone(),
+                            name: entry.1.clone(),
+                        });
+                    }
+                    if let Some(args) = tc["function"]["arguments"].as_str() {
+                        entry.2.push_str(args);
+                        let _ = tx.send(StreamEvent::ToolCallDelta {
+                            index,
+                            arguments: args.to_string(),
+                        });
+                    }
+                }
+            }
+
+            // Parse usage (some providers include it in the final chunk)
+            if let Some(u) = chunk.get("usage") {
+                usage.input_tokens = u["prompt_tokens"].as_u64().unwrap_or(usage.input_tokens);
+                usage.output_tokens =
+                    u["completion_tokens"].as_u64().unwrap_or(usage.output_tokens);
+            }
+        }
+
+        let _ = tx.send(StreamEvent::Done);
+
+        // Build content blocks
+        let mut content_blocks = vec![];
+        if !accumulated_text.is_empty() {
+            content_blocks.push(ContentBlock::text(&accumulated_text));
+        }
+
+        // Add tool calls from accumulator
+        let mut sorted_indices: Vec<usize> = tool_calls_acc.keys().copied().collect();
+        sorted_indices.sort();
+        for idx in sorted_indices {
+            if let Some((id, name, arguments)) = tool_calls_acc.remove(&idx) {
+                content_blocks.push(ContentBlock::tool_call(ToolCall {
+                    id,
+                    name,
+                    arguments,
+                }));
+            }
+        }
+
+        // Fallback: local models (Ollama) embed tool calls in text
+        let has_tool_calls = content_blocks.iter().any(|b| b.content_type == "tool_call");
+        if !has_tool_calls {
+            if let Some(text_block) = content_blocks.first().cloned() {
+                if text_block.content_type == "text" {
+                    if let Some(text) = &text_block.text {
+                        let extracted = extract_text_tool_calls(text);
+                        if !extracted.is_empty() {
+                            content_blocks =
+                                extracted.into_iter().map(ContentBlock::tool_call).collect();
+                            finish_reason = FinishReason::ToolCalls;
+                        }
+                    }
+                }
+            }
+        }
+
+        let message = Message {
+            role: Role::Assistant,
+            content: content_blocks,
+            tool_call_id: None,
+        };
+
+        Ok(CompletionResponse {
+            message,
+            finish_reason,
+            usage,
+        })
     }
 }
 

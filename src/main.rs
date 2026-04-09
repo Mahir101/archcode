@@ -6,10 +6,13 @@ mod event;
 mod guard;
 mod kg;
 mod llm;
+mod markdown;
 mod refactor;
 mod reminder;
 mod session;
 mod skills;
+mod spinner;
+mod theme;
 mod tools;
 mod utils;
 
@@ -314,15 +317,15 @@ async fn main() -> Result<()> {
     tokio::spawn(async move {
         while let Some(evt) = events_rx.recv().await {
             let prefix = match evt.preview_type {
-                event::PreviewType::Guard => "\x1b[33m[Guard]\x1b[0m",
-                event::PreviewType::Tool => "\x1b[36m[Tool]\x1b[0m",
-                event::PreviewType::KG => "\x1b[35m[KG]\x1b[0m",
-                event::PreviewType::Text => "\x1b[0m",
+                event::PreviewType::Guard => format!("{}[Guard]{}", theme::GUARD_LABEL, theme::RESET),
+                event::PreviewType::Tool => format!("{}[Tool]{}", theme::TOOL_LABEL, theme::RESET),
+                event::PreviewType::KG => format!("{}[KG]{}", theme::KG_LABEL, theme::RESET),
+                event::PreviewType::Text => theme::RESET.to_string(),
             };
             let error_marker = if evt.is_error {
-                " \x1b[31m(ERROR)\x1b[0m"
+                format!(" {}(ERROR){}", theme::ERROR, theme::RESET)
             } else {
-                ""
+                String::new()
             };
             let extra = if evt.args.is_empty() {
                 String::new()
@@ -338,6 +341,9 @@ async fn main() -> Result<()> {
 
     let interactive = cli.prompt.is_none();
 
+    // Create streaming channel for live LLM output
+    let (stream_tx, stream_rx) = tokio::sync::mpsc::unbounded_channel::<llm::StreamEvent>();
+
     let mut agent = Agent::new(
         Arc::from(provider),
         model.clone(),
@@ -350,6 +356,11 @@ async fn main() -> Result<()> {
         cost_tracker.clone(),
         interactive,
     );
+
+    // Enable streaming in agent
+    agent.set_stream_sender(stream_tx);
+    // Keep stream_rx for use in the REPL loop
+    let stream_rx = std::sync::Arc::new(tokio::sync::Mutex::new(stream_rx));
 
     // Resume session if requested
     if cli.resume.is_some() {
@@ -379,14 +390,42 @@ async fn main() -> Result<()> {
         let _ = events_tx
             .send(Event::text(format!("archcode started with model: {model}")))
             .await;
-        // Single-shot mode
+
+        // Spawn streaming printer for single-shot mode
+        let srx = stream_rx.clone();
+        let stream_handle = tokio::spawn(async move {
+            let mut rx = srx.lock().await;
+            let mut got_text = false;
+            while let Some(evt) = rx.recv().await {
+                match evt {
+                    llm::StreamEvent::TextDelta(text) => {
+                        if !got_text {
+                            got_text = true;
+                        }
+                        print!("{text}");
+                        let _ = std::io::Write::flush(&mut std::io::stdout());
+                    }
+                    llm::StreamEvent::Done => break,
+                    _ => {}
+                }
+            }
+            got_text
+        });
+
         let result = agent.run(&prompt).await?;
-        println!("{result}");
+        let got_text = stream_handle.await.unwrap_or(false);
+
+        // If streaming didn't deliver text (e.g. fallback), print result
+        if !got_text && !result.is_empty() {
+            println!("{result}");
+        } else {
+            println!(); // newline after streamed output
+        }
 
         // Show cost summary
         let summary = cost_tracker.summary();
         if summary.total_tokens > 0 {
-            eprintln!("\n\x1b[90m{summary}\x1b[0m");
+            eprintln!("\n{}{summary}{}", theme::COST_LABEL, theme::RESET);
         }
     } else {
         // Interactive REPL mode
@@ -428,15 +467,16 @@ async fn main() -> Result<()> {
                         let summary = auto_summary(messages);
                         let _ = session_mgr.save(&session_id, &model, messages, &summary);
                         eprintln!(
-                            "\x1b[36m[Session]\x1b[0m Saved as '{session_id}'"
+                            "{}[Session]{} Saved as '{session_id}'",
+                            theme::SESSION_LABEL, theme::RESET
                         );
                     }
                     // Show cost summary
                     let cost = cost_tracker.summary();
                     if cost.total_tokens > 0 {
-                        eprintln!("\n\x1b[90m{cost}\x1b[0m");
+                        eprintln!("\n{}{cost}{}", theme::COST_LABEL, theme::RESET);
                     }
-                    println!("\x1b[0;90m👋 Goodbye!\x1b[0m");
+                    println!("{}👋 Goodbye!{}", theme::MUTED, theme::RESET);
                     break;
                 }
                 Some(ref s) if s.trim() == "/help" => {
@@ -551,17 +591,79 @@ async fn main() -> Result<()> {
                         let compacted = compact::compact(agent.messages(), 10);
                         *agent.messages_mut() = compacted;
                         eprintln!(
-                            "\x1b[90m[Auto-compact] {} → {} messages\x1b[0m",
+                            "{}[Auto-compact] {} → {} messages{}",
+                            theme::MUTED,
                             before,
-                            agent.messages().len()
+                            agent.messages().len(),
+                            theme::RESET
                         );
                     }
 
-                    match agent.run(&line).await {
-                        Ok(resp) => {
-                            println!("\n\x1b[0;37m{resp}\x1b[0m\n");
+                    // Start spinner
+                    let spin = spinner::Spinner::start();
+
+                    // Spawn streaming text printer
+                    let srx = stream_rx.clone();
+                    let stream_handle = tokio::spawn(async move {
+                        let mut rx = srx.lock().await;
+                        let mut accumulated = String::new();
+                        let mut first_text = true;
+                        while let Some(evt) = rx.recv().await {
+                            match evt {
+                                llm::StreamEvent::TextDelta(text) => {
+                                    if first_text {
+                                        // Clear spinner line and start fresh
+                                        eprint!("\r\x1b[K");
+                                        first_text = false;
+                                    }
+                                    accumulated.push_str(&text);
+                                    print!("{}{text}{}", theme::STREAM_TEXT, theme::RESET);
+                                    let _ = std::io::Write::flush(&mut std::io::stdout());
+                                }
+                                llm::StreamEvent::ToolCallStart { name, .. } => {
+                                    if first_text {
+                                        eprint!("\r\x1b[K");
+                                        first_text = false;
+                                    }
+                                    eprintln!(
+                                        "{}  ↳ calling {}{name}{}",
+                                        theme::MUTED,
+                                        theme::TOOL_LABEL,
+                                        theme::RESET
+                                    );
+                                }
+                                llm::StreamEvent::Done => break,
+                                _ => {}
+                            }
                         }
-                        Err(e) => eprintln!("\x1b[1;31m✖ Error:\x1b[0m {e}"),
+                        accumulated
+                    });
+
+                    let result = agent.run(&line).await;
+
+                    // Stop spinner (no-op if already cleared by streaming)
+                    spin.stop();
+
+                    match result {
+                        Ok(resp) => {
+                            let streamed_text = stream_handle.await.unwrap_or_default();
+                            if !streamed_text.is_empty() {
+                                // Text was already streamed live — print a newline
+                                // and render the final markdown version below it
+                                println!();
+                            }
+                            if streamed_text.is_empty() && !resp.is_empty() {
+                                // Fallback: no streaming happened, render markdown
+                                println!();
+                                markdown::render_markdown(&resp);
+                                println!();
+                            }
+                        }
+                        Err(e) => {
+                            // Cancel stream reader
+                            stream_handle.abort();
+                            eprintln!("{}✖ Error:{} {e}", theme::ERROR, theme::RESET);
+                        }
                     }
                 }
             }

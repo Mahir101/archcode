@@ -7,7 +7,7 @@ use crate::event::Event;
 use crate::guard::{EvalContext, GuardManager, Verdict};
 use crate::llm::{
     CompletionParams, CompletionResponse, ContentBlock, FinishReason, LlmProvider, Message,
-    ToolCall, ToolCallResult, ToolDef,
+    StreamSender, ToolCall, ToolCallResult, ToolDef,
 };
 use crate::reminder::{ConversationState, ReminderManager};
 use crate::tools::ToolManager;
@@ -26,6 +26,7 @@ pub struct Agent {
     working_dir: String,
     cost_tracker: CostTracker,
     interactive: bool,
+    stream_tx: Option<StreamSender>,
 }
 
 impl Agent {
@@ -54,7 +55,13 @@ impl Agent {
             working_dir,
             cost_tracker,
             interactive,
+            stream_tx: None,
         }
+    }
+
+    /// Set a stream sender for live streaming of LLM text output.
+    pub fn set_stream_sender(&mut self, tx: StreamSender) {
+        self.stream_tx = Some(tx);
     }
 
     pub fn messages(&self) -> &[Message] {
@@ -99,16 +106,21 @@ impl Agent {
         const MAX_CONTINUATIONS: usize = 3;
 
         for _turn in 0..MAX_TURNS {
-            let resp: CompletionResponse = self
-                .provider
-                .complete(CompletionParams {
-                    model: self.model.clone(),
-                    messages: self.messages.clone(),
-                    tools: tool_defs.clone(),
-                    max_tokens: None,
-                    temperature: None,
-                })
-                .await?;
+            let completion_params = CompletionParams {
+                model: self.model.clone(),
+                messages: self.messages.clone(),
+                tools: tool_defs.clone(),
+                max_tokens: None,
+                temperature: None,
+            };
+
+            let resp: CompletionResponse = if let Some(stx) = &self.stream_tx {
+                self.provider
+                    .stream_complete(completion_params, stx.clone())
+                    .await?
+            } else {
+                self.provider.complete(completion_params).await?
+            };
 
             // Record token usage
             self.cost_tracker

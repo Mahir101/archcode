@@ -1,6 +1,27 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc;
+
+// ---------------------------------------------------------------------------
+// Streaming
+// ---------------------------------------------------------------------------
+
+/// Events emitted during streaming LLM responses.
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub enum StreamEvent {
+    /// A chunk of text content from the assistant.
+    TextDelta(String),
+    /// A tool call is starting (id + name known).
+    ToolCallStart { id: String, name: String },
+    /// Additional arguments chunk for a tool call being streamed.
+    ToolCallDelta { index: usize, arguments: String },
+    /// The LLM has finished generating.
+    Done,
+}
+
+pub type StreamSender = mpsc::UnboundedSender<StreamEvent>;
 
 // ---------------------------------------------------------------------------
 // Config
@@ -197,4 +218,20 @@ pub struct CompletionResponse {
 pub trait LlmProvider {
     async fn complete(&self, params: CompletionParams) -> Result<CompletionResponse>;
     fn model(&self) -> &str;
+
+    /// Streaming completion — sends deltas through `tx` while accumulating the full response.
+    /// Default implementation falls back to non-streaming `complete()`.
+    async fn stream_complete(
+        &self,
+        params: CompletionParams,
+        tx: StreamSender,
+    ) -> Result<CompletionResponse> {
+        let resp = self.complete(params).await?;
+        let text = resp.message.text();
+        if !text.is_empty() {
+            let _ = tx.send(StreamEvent::TextDelta(text));
+        }
+        let _ = tx.send(StreamEvent::Done);
+        Ok(resp)
+    }
 }

@@ -7,7 +7,8 @@ pub use openai::OpenAIProvider;
 #[allow(unused_imports)]
 pub use provider::{
     Backend, CompletionParams, CompletionResponse, ContentBlock, FinishReason, LlmProvider,
-    Message, ProviderConfig, Role, TokenUsage, ToolCall, ToolCallResult, ToolDef,
+    Message, ProviderConfig, Role, StreamEvent, StreamSender, TokenUsage, ToolCall, ToolCallResult,
+    ToolDef,
 };
 
 use anyhow::Result;
