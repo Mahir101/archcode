@@ -176,10 +176,17 @@ pub struct CompletionParams {
     pub temperature: Option<f32>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct TokenUsage {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+}
+
 #[derive(Debug, Clone)]
 pub struct CompletionResponse {
     pub message: Message,
     pub finish_reason: FinishReason,
+    pub usage: TokenUsage,
 }
 
 // ---------------------------------------------------------------------------

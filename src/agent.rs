@@ -2,6 +2,7 @@ use anyhow::Result;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
+use crate::cost::CostTracker;
 use crate::event::Event;
 use crate::guard::{EvalContext, GuardManager, Verdict};
 use crate::llm::{
@@ -23,6 +24,8 @@ pub struct Agent {
     messages: Vec<Message>,
     events_tx: mpsc::Sender<Event>,
     working_dir: String,
+    cost_tracker: CostTracker,
+    interactive: bool,
 }
 
 impl Agent {
@@ -36,6 +39,8 @@ impl Agent {
         system_prompt: String,
         events_tx: mpsc::Sender<Event>,
         working_dir: String,
+        cost_tracker: CostTracker,
+        interactive: bool,
     ) -> Self {
         Self {
             provider,
@@ -47,7 +52,17 @@ impl Agent {
             messages: vec![],
             events_tx,
             working_dir,
+            cost_tracker,
+            interactive,
         }
+    }
+
+    pub fn messages(&self) -> &[Message] {
+        &self.messages
+    }
+
+    pub fn messages_mut(&mut self) -> &mut Vec<Message> {
+        &mut self.messages
     }
 
     pub async fn run(&mut self, user_input: &str) -> Result<String> {
@@ -80,6 +95,9 @@ impl Agent {
             })
             .collect();
 
+        let mut continuation_count = 0;
+        const MAX_CONTINUATIONS: usize = 3;
+
         for _turn in 0..MAX_TURNS {
             let resp: CompletionResponse = self
                 .provider
@@ -92,13 +110,35 @@ impl Agent {
                 })
                 .await?;
 
+            // Record token usage
+            self.cost_tracker
+                .record(resp.usage.input_tokens, resp.usage.output_tokens);
+
             self.messages.push(resp.message.clone());
 
             match resp.finish_reason {
                 FinishReason::Stop => {
                     return Ok(resp.message.text());
                 }
+                FinishReason::Length => {
+                    // MaxTokens hit — auto-continue up to MAX_CONTINUATIONS times
+                    if continuation_count < MAX_CONTINUATIONS {
+                        continuation_count += 1;
+                        let _ = self
+                            .events_tx
+                            .send(Event::text(format!(
+                                "Response truncated (max_tokens). Auto-continuing ({continuation_count}/{MAX_CONTINUATIONS})..."
+                            )))
+                            .await;
+                        self.messages
+                            .push(Message::user("Please continue from where you left off."));
+                        continue;
+                    } else {
+                        return Ok(resp.message.text());
+                    }
+                }
                 FinishReason::ToolCalls => {
+                    continuation_count = 0; // Reset on tool calls
                     for tc in resp.message.tool_calls() {
                         let tc: ToolCall = tc.clone();
                         let args: serde_json::Value =
@@ -134,16 +174,36 @@ impl Agent {
                                 continue;
                             }
                             Verdict::Ask => {
-                                // For now auto-ask becomes a deny in non-interactive mode
-                                let _ = self
-                                    .events_tx
-                                    .send(Event::guard(
-                                        &tc.name,
-                                        format!("ASK: {}", decision.reason),
-                                        false,
-                                    ))
-                                    .await;
-                                // In interactive mode this would prompt user; here we allow
+                                if self.interactive {
+                                    // Interactive mode: prompt user for permission
+                                    let _ = self
+                                        .events_tx
+                                        .send(Event::guard(
+                                            &tc.name,
+                                            format!("Permission required: {}", decision.reason),
+                                            false,
+                                        ))
+                                        .await;
+                                    eprint!(
+                                        "\x1b[33m[Guard]\x1b[0m Allow '{}' {}? [y/N] ",
+                                        tc.name, decision.reason
+                                    );
+                                    let mut input = String::new();
+                                    if std::io::stdin().read_line(&mut input).is_ok() {
+                                        let answer = input.trim().to_lowercase();
+                                        if answer != "y" && answer != "yes" {
+                                            self.messages.push(Message {
+                                                role: crate::llm::Role::Tool,
+                                                content: vec![crate::llm::ContentBlock::text(
+                                                    "Tool call denied by user.".to_string(),
+                                                )],
+                                                tool_call_id: Some(tc.id.clone()),
+                                            });
+                                            continue;
+                                        }
+                                    }
+                                }
+                                // Non-interactive: auto-allow
                             }
                             Verdict::Allow => {}
                         }

@@ -1,6 +1,6 @@
-# Contributing to Rapcode
+# Contributing to ArchCode
 
-First off, thank you for considering contributing to Rapcode! It's people like you that make Rapcode such a great tool.
+First off, thank you for considering contributing to ArchCode! It's people like you that make ArchCode such a great tool.
 
 ## Where do I go from here?
 
@@ -8,7 +8,7 @@ If you've noticed a bug or have a feature request, make one! It's generally best
 
 ## Fork & create a branch
 
-If this is something you think you can fix, then fork Rapcode and create a branch with a descriptive name.
+If this is something you think you can fix, then fork ArchCode and create a branch with a descriptive name.
 
 A good branch name would be (where issue #325 is the ticket you're working on):
 

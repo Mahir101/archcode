@@ -1,93 +1,200 @@
-# Rapcode
+# ArchCode
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
 
-**Rapcode** is an agentic AI coding assistant created by Mahir101, designed to help developers build, explore, and refactor codebases safely and intelligently. Written in Rust, it comes with multi-agent orchestration, an extensible toolset, a built-in safety guard, and deep understanding of code structures through a local knowledge graph.
+**ArchCode** is an agentic AI coding assistant by Mahir101. Built in Rust, ArchCode combines safety, code understanding, and extensible tooling to explore, refactor, and change codebases with an AI-driven workflow.
 
-## Features
+ArchCode is designed to be used as a developer assistant for:
+- analyzing repository structure,
+- making safe code edits,
+- performing targeted refactorings,
+- running shell-based exploration,
+- and persisting multi-turn sessions.
 
-- **Agentic AI Assistant**: Solves complex coding tasks, understands your project structure, and makes targeted changes.
-- **Multi-Agent Orchestration**: Handles multiple specialized agents (like a guard agent for safety and a main agent for task execution).
-- **Safety Guards**: Includes built-in safety validations (DangerousCommandRule, SensitiveFileRule, WorkingDirRule) and an LLM-based guard agent to prevent unintended destructive actions.
-- **Knowledge Graph (KG) Integration**: Builds a local graph of your codebase to understand relationships, assess impact, trace dependencies, and evaluate risks.
-- **SOLID Refactoring Mode**: Dedicated refactoring capabilities built in, including baseline tests, formatting, linting, semantic pattern matching (semgrep), and git diff integrations.
-- **Comprehensive Toolset**:
-  - **Filesystem**: Read, Write, Edit, Glob
-  - **Execution**: Execute bash commands
-  - **Workflow**: Manage todos (TodoRead, TodoWrite)
-  - **Information Retrieval**: Perform Web Searches and KG queries
+## Key Features
+
+- **Agentic execution**: multi-turn interaction with tool-enabled AI responses.
+- **Safety guards**: built-in rules and an optional LLM guard prevent dangerous operations.
+- **Knowledge Graph (KG)**: local code graph indexing for relationships, risk, dependencies, and blast radius.
+- **Session persistence**: save and resume conversations in `.archcode/sessions/`.
+- **Token/cost tracking**: displays usage and estimated API cost in REPL sessions.
+- **Persistent Bash shell**: maintains working directory and environment state across commands.
+- **Slash commands**: fast interactive controls like `/help`, `/cost`, `/sessions`, `/compact`, `/diff`, and more.
+- **Auto-compact**: compresses old history when context grows too large.
+- **SOLID Refactoring Mode**: dedicated refactor prompts and toolset for cleaner code changes.
 
 ## Installation
 
-Ensure you have Rust and Cargo installed, then build the project:
+Make sure Rust and Cargo are installed, then build the project:
 
 ```bash
 cargo build --release
 ```
 
-The compiled binary will be located at `target/release/archcode`.
-
-## Usage
-
-Rapcode is executed from the terminal. You can run it via `cargo run` during development, or execute the compiled binary from the `target/` directory.
-
-### Interactive Mode
-
-Simply run the binary without arguments to enter the interactive chat interface:
+The binary will be available at:
 
 ```bash
-cargo run
-# or if built in release mode:
 ./target/release/archcode
 ```
 
-### Single-shot Prompt
+## Configuration
 
-If you want to run a specific command non-interactively, use the `--prompt` flag:
+ArchCode uses environment variables to configure the LLM provider.
+Supported variables:
 
-```bash
-cargo run -- --prompt "Refactor the src/utils.rs file to reduce duplication"
-# or
-./target/release/archcode --prompt "Refactor the src/utils.rs file to reduce duplication"
+- `ARCHCODE_MODEL` — model name (default: `gpt-4o`)
+- `ARCHCODE_API_KEY` — API key for OpenAI-compatible providers
+- `ARCHCODE_BASE_URL` — custom OpenAI-compatible endpoint
+- `ARCHCODE_PROVIDER` — provider override (`openai` or `anthropic`)
+
+Example `.env`:
+
+```ini
+ARCHCODE_MODEL=gpt-4o
+ARCHCODE_API_KEY=sk-...
+ARCHCODE_BASE_URL=https://api.openai.com/v1
+ARCHCODE_PROVIDER=openai
 ```
 
-### Flags & Options
+## Usage
 
-- `--prompt <STRING>`: Single-shot prompt (non-interactive).
-- `--no-guard`: Disables the safety guard agent (use with caution).
-- `--refactor`: Enables SOLID Refactoring Mode. Injects playbook rules into the system prompt and prioritizes refactoring tools.
+### Start interactive mode
 
 ```bash
-./target/release/archcode --refactor --prompt "Analyze my codebase for SOLID principle smells"
+./target/release/archcode
 ```
+
+### Run a one-off prompt
+
+```bash
+./target/release/archcode --prompt "Refactor src/utils.rs to remove duplication"
+```
+
+### Resume a saved session
+
+```bash
+./target/release/archcode --resume <session_id>
+```
+
+## CLI Options
+
+| Flag | Description |
+|---|---|
+| `--prompt <STRING>` | Run a single prompt and exit |
+| `--no-guard` | Disable the safety guard agent |
+| `--refactor` | Enable SOLID Refactoring Mode |
+| `--resume <ID>` | Resume a previously saved session |
+| `--fast` | Low-temperature fast responses |
+| `--max` | Higher-effort, more thorough responses |
+| `--max-context <TOKENS>` | Adjust the auto-compact trigger threshold (default: 128000) |
+
+Example:
+
+```bash
+./target/release/archcode --refactor --fast
+```
+
+## Interactive Slash Commands
+
+Use REPL commands to control the session without leaving the chat.
+
+- `/help` — show available commands
+- `/clear` — clear current conversation history
+- `/compact` — manually compact conversation context
+- `/cost` — show token usage and estimated cost
+- `/model` — show active model, session ID, and context state
+- `/sessions` — list saved sessions
+- `/save` — save the current session immediately
+- `/diff` — show current git diff summary
+- `/quit` or `/exit` — save and exit
+
+## Session Management
+
+Sessions are stored in `.archcode/sessions/`.
+When you exit interactive mode, ArchCode auto-saves the current session if there is history.
+Use `--resume <session_id>` to continue later.
+
+## Tool Overview
+
+ArchCode includes an extensible toolset for repository exploration and editing.
+
+- `Read`: read file contents
+- `Write`: write or create files
+- `Edit`: perform exact text replacement edits
+- `Glob`: expand filename patterns
+- `Grep`: search workspace text with ripgrep or grep fallback
+- `Bash`: execute shell commands in a persistent shell session
+- `WebSearch`: search the web from within the REPL
+- `TodoRead` / `TodoWrite`: manage persistent todo state
+- `KGIndex`, `KGQuery`, `KGSearch`, `KGBlast`, `KGRisk`, `KGRelate`, `KGLint`: knowledge graph exploration and risk analysis
+- `refactor.*`: refactor-specific tools for tests, linting, formatting, semantic patterns, and diff review
+
+### Persistent Bash Shell
+
+The `Bash` tool preserves working directory and exported environment variables across commands, enabling a more natural shell-like workflow.
+
+## Knowledge Graph (KG)
+
+At startup, ArchCode automatically indexes the current repository into a local KG. This graph supports:
+
+- symbol search and relationships
+- blast radius analysis
+- dependency tracing
+- risk scoring
+- structural queries
+
+Use KG tools before making edits to understand change impact and reduce risk.
+
+## Safety & Guarding
+
+ArchCode enforces safety through built-in rules and optional LLM validation.
+The guard layer checks for:
+
+- dangerous shell commands
+- sensitive file access
+- out-of-scope working directories
+- undefined or risky tool usage
+
+In interactive mode, uncertain actions can prompt for user confirmation.
+
+## Refactoring Mode
+
+Start with `--refactor` to enable SOLID refactoring behavior and to inject refactor playbook instructions into the system prompt.
+This mode is useful for cleaner, rule-guided code improvements.
 
 ## Project Structure
 
-- `src/agent.rs`: Core multi-agent logic and orchestration.
-- `src/guard/`: Safety components and rule validations.
-- `src/kg/`: Knowledge Graph implementation for mapping codebase relationships.
-- `src/llm/`: Providers for language models (Anthropic, OpenAI, etc.).
-- `src/refactor/`: Refactoring specific workflows and tool integrations.
-- `src/skills/` & `src/tools/`: The extensive capabilities and tools the agent can use.
-- `refactoring/`: Playbooks, rules, and documentation for the SOLID refactoring module.
+- `src/agent.rs` — main agent loop and tool orchestration
+- `src/guard/` — safety rules and guard agent
+- `src/kg/` — knowledge graph indexing and KG tools
+- `src/llm/` — language model provider bridge
+- `src/refactor/` — refactoring workflows and playbook rules
+- `src/tools/` — tool implementations
+- `src/session.rs` — session persistence management
+- `src/cost.rs` — token usage and cost tracking
+- `src/compact.rs` — conversation compaction logic
 
-## Configuration
+## Development
 
-Rapcode relies on standard environment variables to connect to LLM providers:
-- `OPENAI_API_KEY` (if using OpenAI)
-- `ANTHROPIC_API_KEY` (if using Anthropic)
+Run tests with:
 
-You can define these in a `.env` file at the root of your project or export them in your shell session.
+```bash
+cargo test
+```
+
+Build in debug mode locally:
+
+```bash
+cargo run
+```
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
 ## Contributing
 
-We welcome contributions to Rapcode! Please see our [Contributing Guidelines](CONTRIBUTING.md) for more details on how to get started, set up your development environment, and submit Pull Requests.
+For contribution guidelines, see [CONTRIBUTING.md](CONTRIBUTING.md).
+For community standards and behavior, see [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
-Please note that this project is released with a [Contributor Code of Conduct](CODE_OF_CONDUCT.md). By participating in this project you agree to abide by its terms.
-
-## License & Authors
-
-This project is licensed under the [MIT License](LICENSE) - see the LICENSE file for details.
-
-Created by **Mahir101**. 

@@ -1,11 +1,14 @@
 mod agent;
+mod compact;
 mod config;
+mod cost;
 mod event;
 mod guard;
 mod kg;
 mod llm;
 mod refactor;
 mod reminder;
+mod session;
 mod skills;
 mod tools;
 mod utils;
@@ -18,6 +21,8 @@ use tokio::sync::mpsc;
 use config::discover_instruction_files;
 
 use agent::Agent;
+use compact::{estimate_tokens, should_compact};
+use cost::CostTracker;
 use event::Event;
 use guard::{
     DangerousCommandRule, Decision, DefaultPolicyRule, GuardManager, GuardRule, SensitiveFileRule,
@@ -33,10 +38,11 @@ use refactor::{
     REFACTOR_SYSTEM_SNIPPET,
 };
 use reminder::{ConversationState, Reminder, ReminderManager, ScheduleKind};
+use session::{auto_summary, SessionManager};
 use skills::SkillManager;
 use tools::{
-    BashTool, EditTool, GlobTool, ReadTool, TodoReadTool, TodoStore, TodoWriteTool, ToolManager,
-    WebSearchTool, WriteTool,
+    BashTool, EditTool, GlobTool, GrepTool, ReadTool, ShellState, TodoReadTool, TodoStore,
+    TodoWriteTool, ToolManager, WebSearchTool, WriteTool,
 };
 
 // ---------------------------------------------------------------------------
@@ -62,19 +68,38 @@ struct Cli {
     /// and makes all refactor.* tools available to the agent.
     #[arg(long, default_value_t = false)]
     refactor: bool,
+
+    /// Resume a previous session by ID
+    #[arg(long)]
+    resume: Option<String>,
+
+    /// Fast mode — lower temperature, concise responses
+    #[arg(long, default_value_t = false)]
+    fast: bool,
+
+    /// Max effort mode — higher token budget, thorough responses
+    #[arg(long, default_value_t = false)]
+    max: bool,
+
+    /// Maximum context window size in tokens (for auto-compact)
+    #[arg(long, default_value_t = 128000)]
+    max_context: usize,
 }
 
 // ---------------------------------------------------------------------------
 // Setup helpers
 // ---------------------------------------------------------------------------
 
-fn build_tool_manager(cwd: &str) -> (Arc<ToolManager>, TodoStore) {
+fn build_tool_manager(cwd: &str) -> (Arc<ToolManager>, TodoStore, Arc<KGManager>) {
     let mut mgr = ToolManager::new();
     mgr.register(ReadTool);
     mgr.register(WriteTool);
     mgr.register(EditTool);
     mgr.register(GlobTool);
-    mgr.register(BashTool);
+    mgr.register(GrepTool);
+    mgr.register(BashTool {
+        state: ShellState::new(cwd),
+    });
     mgr.register(WebSearchTool);
 
     let store = TodoStore::new();
@@ -110,7 +135,7 @@ fn build_tool_manager(cwd: &str) -> (Arc<ToolManager>, TodoStore) {
         lint_store,
     });
 
-    (Arc::new(mgr), store)
+    (Arc::new(mgr), store, kg)
 }
 
 fn build_guard_manager(no_guard: bool) -> Arc<GuardManager> {
@@ -222,9 +247,20 @@ fn build_system_prompt(cwd: &str, refactor_mode: bool) -> String {
     format!(
         "You are archcode, an expert agentic AI coding assistant created by Mahir101.\n\
          You are running in: {cwd}\n\n\
-         You have access to tools: Read, Write, Edit, Glob, Bash, WebSearch, TodoRead, TodoWrite, \
+         You have access to tools: Read, Write, Edit, Glob, Grep, Bash, WebSearch, TodoRead, TodoWrite, \
+         KGIndex, KGQuery, KGSearch, KGBlast, KGRisk, KGRelate, KGLint, \
          refactor.baseline, refactor.run_tests, refactor.run_lint, refactor.run_format, \
-         refactor.run_semgrep, refactor.git_diff.\n\
+         refactor.run_semgrep, refactor.git_diff.\n\n\
+         Knowledge Graph (KG) tools:\n\
+         - KGIndex: index files/directories to build a code graph of symbols, dependencies, and relationships.\n\
+         - KGQuery: find neighbors of a node (file, function, class) in the graph.\n\
+         - KGSearch: search the graph by name pattern.\n\
+         - KGBlast: compute blast radius — what is affected if a symbol changes.\n\
+         - KGRisk: score files/functions by risk (complexity, churn, fan-in).\n\
+         - KGRelate: find how two nodes are connected.\n\
+         - KGLint: run architectural linters (god class, circular deps, etc).\n\n\
+         The working directory has been pre-indexed into the KG at startup. Use KG tools to understand \
+         the codebase structure, dependencies, and impact before making changes.\n\n\
          Always think step by step. Use tools to explore before making changes.\n\
          Be concise, precise, and safe.{refactor_section}{instruction_context}"
     )
@@ -249,11 +285,28 @@ async fn main() -> Result<()> {
         .to_string_lossy()
         .to_string();
 
-    let (tool_mgr, _todo_store) = build_tool_manager(&cwd);
+    let (tool_mgr, _todo_store, kg_mgr) = build_tool_manager(&cwd);
     let guard_mgr = build_guard_manager(cli.no_guard);
     let skill_mgr = SkillManager::load_default();
     let reminder_mgr = build_reminder_manager(&skill_mgr);
     let system_prompt = build_system_prompt(&cwd, cli.refactor);
+
+    // Cost tracker
+    let cost_tracker = CostTracker::new(&model);
+
+    // Session manager
+    let session_mgr = SessionManager::new(&cwd);
+    let session_id = cli
+        .resume
+        .clone()
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string().split('-').next().unwrap_or("session").to_string());
+
+    // Auto-index working directory into the Knowledge Graph
+    let kg_clone = kg_mgr.clone();
+    let cwd_clone = cwd.clone();
+    let kg_handle = tokio::task::spawn_blocking(move || {
+        kg_clone.index_dir(&cwd_clone);
+    });
 
     let (events_tx, mut events_rx) = mpsc::channel::<Event>(128);
 
@@ -283,6 +336,8 @@ async fn main() -> Result<()> {
         }
     });
 
+    let interactive = cli.prompt.is_none();
+
     let mut agent = Agent::new(
         Arc::from(provider),
         model.clone(),
@@ -291,8 +346,33 @@ async fn main() -> Result<()> {
         reminder_mgr,
         system_prompt,
         events_tx.clone(),
-        cwd,
+        cwd.clone(),
+        cost_tracker.clone(),
+        interactive,
     );
+
+    // Resume session if requested
+    if cli.resume.is_some() {
+        match session_mgr.load(&session_id) {
+            Ok((meta, messages)) => {
+                *agent.messages_mut() = messages;
+                eprintln!(
+                    "\x1b[36m[Session]\x1b[0m Resumed session '{}' ({} messages)",
+                    session_id, meta.message_count
+                );
+            }
+            Err(e) => {
+                eprintln!(
+                    "\x1b[31m[Session]\x1b[0m Failed to resume '{}': {e}",
+                    session_id
+                );
+            }
+        }
+    }
+
+    // Wait for KG indexing to complete and show stats
+    let _ = kg_handle.await;
+    eprintln!("\x1b[35m[KG]\x1b[0m {}", kg_mgr.stats());
 
     if let Some(prompt) = cli.prompt {
         // Send startup event in single-shot mode
@@ -302,6 +382,12 @@ async fn main() -> Result<()> {
         // Single-shot mode
         let result = agent.run(&prompt).await?;
         println!("{result}");
+
+        // Show cost summary
+        let summary = cost_tracker.summary();
+        if summary.total_tokens > 0 {
+            eprintln!("\n\x1b[90m{summary}\x1b[0m");
+        }
     } else {
         // Interactive REPL mode
         println!("\x1b[1;36m");
@@ -317,9 +403,10 @@ async fn main() -> Result<()> {
         println!("   ║   \x1b[0;36marchcode v{:<8}\x1b[1;36m  \x1b[0;90m— agentic AI assistant\x1b[1;36m    ║", env!("CARGO_PKG_VERSION"));
         println!("   ║   \x1b[0;90mby Mahir101\x1b[1;36m                                    ║");
         println!("   ║   \x1b[0;90mmodel: {:<42}\x1b[1;36m║", &model);
+        println!("   ║   \x1b[0;90msession: {:<40}\x1b[1;36m║", &session_id);
         println!("   ║                                                  ║");
         println!("   ╠══════════════════════════════════════════════════╣");
-        println!("   ║  \x1b[0;33m/quit\x1b[1;36m or \x1b[0;33m/exit\x1b[1;36m to leave  •  \x1b[0;33mCtrl+C\x1b[1;36m to abort    ║");
+        println!("   ║  \x1b[0;33m/help\x1b[1;36m for commands  •  \x1b[0;33mCtrl+C\x1b[1;36m to abort        ║");
         println!("   ╚══════════════════════════════════════════════════╝");
         println!("\x1b[0m");
 
@@ -328,21 +415,155 @@ async fn main() -> Result<()> {
         let reader = tokio::io::BufReader::new(stdin);
         let mut lines = reader.lines();
 
+        let max_context = cli.max_context;
+
         loop {
             eprint!("\x1b[1;32m❯ \x1b[0m");
             match lines.next_line().await? {
                 None => break,
                 Some(ref s) if s.trim() == "/quit" || s.trim() == "/exit" => {
+                    // Auto-save session
+                    let messages = agent.messages();
+                    if messages.len() > 1 {
+                        let summary = auto_summary(messages);
+                        let _ = session_mgr.save(&session_id, &model, messages, &summary);
+                        eprintln!(
+                            "\x1b[36m[Session]\x1b[0m Saved as '{session_id}'"
+                        );
+                    }
+                    // Show cost summary
+                    let cost = cost_tracker.summary();
+                    if cost.total_tokens > 0 {
+                        eprintln!("\n\x1b[90m{cost}\x1b[0m");
+                    }
                     println!("\x1b[0;90m👋 Goodbye!\x1b[0m");
                     break;
                 }
-                Some(ref line) if line.trim().is_empty() => continue,
-                Some(line) => match agent.run(&line).await {
-                    Ok(resp) => {
-                        println!("\n\x1b[0;37m{resp}\x1b[0m\n");
+                Some(ref s) if s.trim() == "/help" => {
+                    println!("\x1b[1;36mSlash Commands:\x1b[0m");
+                    println!("  \x1b[33m/help\x1b[0m       Show this help");
+                    println!("  \x1b[33m/clear\x1b[0m      Clear conversation history");
+                    println!("  \x1b[33m/compact\x1b[0m    Compact conversation to save context");
+                    println!("  \x1b[33m/cost\x1b[0m       Show token usage and cost");
+                    println!("  \x1b[33m/model\x1b[0m      Show current model info");
+                    println!("  \x1b[33m/sessions\x1b[0m   List saved sessions");
+                    println!("  \x1b[33m/save\x1b[0m       Save current session");
+                    println!("  \x1b[33m/diff\x1b[0m       Show git diff of changes");
+                    println!("  \x1b[33m/quit\x1b[0m       Save session and exit");
+                    continue;
+                }
+                Some(ref s) if s.trim() == "/clear" => {
+                    *agent.messages_mut() = vec![];
+                    println!("\x1b[90mConversation cleared.\x1b[0m");
+                    continue;
+                }
+                Some(ref s) if s.trim() == "/compact" => {
+                    let before_len = agent.messages().len();
+                    let before_tokens = estimate_tokens(agent.messages());
+                    let compacted = compact::compact(agent.messages(), 10);
+                    let after_tokens = estimate_tokens(&compacted);
+                    let after_len = compacted.len();
+                    *agent.messages_mut() = compacted;
+                    println!(
+                        "\x1b[90mCompacted: ~{before_tokens} → ~{after_tokens} tokens ({} messages removed)\x1b[0m",
+                        before_len.saturating_sub(after_len)
+                    );
+                    continue;
+                }
+                Some(ref s) if s.trim() == "/cost" => {
+                    let cost = cost_tracker.summary();
+                    println!("\x1b[36m{cost}\x1b[0m");
+                    println!(
+                        "\x1b[90mContext: ~{} estimated tokens\x1b[0m",
+                        estimate_tokens(agent.messages())
+                    );
+                    continue;
+                }
+                Some(ref s) if s.trim() == "/model" => {
+                    println!("\x1b[36mModel:\x1b[0m {model}");
+                    println!("\x1b[36mSession:\x1b[0m {session_id}");
+                    println!(
+                        "\x1b[36mContext:\x1b[0m ~{} tokens / {max_context} max",
+                        estimate_tokens(agent.messages())
+                    );
+                    let mode = if cli.fast {
+                        "fast"
+                    } else if cli.max {
+                        "max"
+                    } else {
+                        "default"
+                    };
+                    println!("\x1b[36mEffort:\x1b[0m {mode}");
+                    continue;
+                }
+                Some(ref s) if s.trim() == "/sessions" => {
+                    let sessions = session_mgr.list();
+                    if sessions.is_empty() {
+                        println!("\x1b[90mNo saved sessions.\x1b[0m");
+                    } else {
+                        println!("\x1b[1;36mSaved Sessions:\x1b[0m");
+                        for s in &sessions {
+                            let active = if s.id == session_id { " \x1b[32m(active)\x1b[0m" } else { "" };
+                            println!(
+                                "  \x1b[33m{}\x1b[0m{active} — {} msgs — {}",
+                                s.id, s.message_count, s.summary
+                            );
+                        }
+                        println!("\x1b[90mResume with: archcode --resume <id>\x1b[0m");
                     }
-                    Err(e) => eprintln!("\x1b[1;31m✖ Error:\x1b[0m {e}"),
-                },
+                    continue;
+                }
+                Some(ref s) if s.trim() == "/save" => {
+                    let messages = agent.messages();
+                    let summary = auto_summary(messages);
+                    match session_mgr.save(&session_id, &model, messages, &summary) {
+                        Ok(_) => println!(
+                            "\x1b[36m[Session]\x1b[0m Saved as '{session_id}'"
+                        ),
+                        Err(e) => eprintln!("\x1b[31mFailed to save: {e}\x1b[0m"),
+                    }
+                    continue;
+                }
+                Some(ref s) if s.trim() == "/diff" => {
+                    match tokio::process::Command::new("git")
+                        .args(["diff", "--stat"])
+                        .current_dir(&cwd)
+                        .output()
+                        .await
+                    {
+                        Ok(output) => {
+                            let stdout = String::from_utf8_lossy(&output.stdout);
+                            if stdout.trim().is_empty() {
+                                println!("\x1b[90mNo uncommitted changes.\x1b[0m");
+                            } else {
+                                println!("{stdout}");
+                            }
+                        }
+                        Err(e) => eprintln!("\x1b[31mFailed to run git diff: {e}\x1b[0m"),
+                    }
+                    continue;
+                }
+                Some(ref line) if line.trim().is_empty() => continue,
+                Some(line) => {
+                    // Auto-compact if context is getting large
+                    if should_compact(agent.messages(), max_context) {
+                        let before = agent.messages().len();
+                        let compacted = compact::compact(agent.messages(), 10);
+                        *agent.messages_mut() = compacted;
+                        eprintln!(
+                            "\x1b[90m[Auto-compact] {} → {} messages\x1b[0m",
+                            before,
+                            agent.messages().len()
+                        );
+                    }
+
+                    match agent.run(&line).await {
+                        Ok(resp) => {
+                            println!("\n\x1b[0;37m{resp}\x1b[0m\n");
+                        }
+                        Err(e) => eprintln!("\x1b[1;31m✖ Error:\x1b[0m {e}"),
+                    }
+                }
             }
         }
     }

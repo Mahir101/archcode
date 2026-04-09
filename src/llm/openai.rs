@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use super::provider::{
     CompletionParams, CompletionResponse, ContentBlock, FinishReason, LlmProvider, Message,
-    ProviderConfig, Role, ToolCall,
+    ProviderConfig, Role, TokenUsage, ToolCall,
 };
 
 pub struct OpenAIProvider {
@@ -175,9 +175,16 @@ impl LlmProvider for OpenAIProvider {
             tool_call_id: None,
         };
 
+        // Parse token usage
+        let usage = TokenUsage {
+            input_tokens: json["usage"]["prompt_tokens"].as_u64().unwrap_or(0),
+            output_tokens: json["usage"]["completion_tokens"].as_u64().unwrap_or(0),
+        };
+
         Ok(CompletionResponse {
             message,
             finish_reason,
+            usage,
         })
     }
 
